@@ -66,8 +66,8 @@ REGION_STYLE_DICT = {
 }
 
 
-# NO_RED_COLORS = ('k', 'green','m', 'mediumpurple', 'black',
-#                  'lightgreen','lightblue', 'greenyellow')
+NO_RED_COLORS = ('k', 'green','m', 'mediumpurple', 'black',
+                 'lightgreen','lightblue', 'greenyellow')
 
 
 
@@ -220,11 +220,11 @@ black_white_cmap = mcolors.ListedColormap(colors)
 
 
 
-# plot_kwargs = dict(height=12, width=22, hspace=0.3, #vmin=-8, vmax=8, step=2, 
-#                    cmap = 'RdBu_r', line_color = 'limegreen', line_alpha=0.65, 
-#                    ax2_ylabel = 'Anomaly', cbar_label = 'Signal-to-Noise', cbartick_offset=0,
-#                    axes_title='', 
-#                    title='', label_size=12, extend='both', xlowerlim=None, xupperlim=None,  filter_max=True,)
+plot_kwargs = dict(height=12, width=22, hspace=0.3, #vmin=-8, vmax=8, step=2, 
+                   cmap = 'RdBu_r', line_color = 'limegreen', line_alpha=0.65, 
+                   ax2_ylabel = 'Anomaly', cbar_label = 'Signal-to-Noise', cbartick_offset=0,
+                   axes_title='', 
+                   title='', label_size=12, extend='both', xlowerlim=None, xupperlim=None,  filter_max=True,)
 
 
 def format_ticks_as_years(ax, xvalues, major_base:int=10, minor_base:int=5, logginglevel='ERROR'):
@@ -351,155 +351,155 @@ def plot_all_coord_lines(da: xr.DataArray, coord='model', exp_type=None,
 
 
 
-# def create_levels(vmax:float, vmin:float=None, step:float=1)->np.ndarray:
-#     '''
-#     Ensures that all instances of creating levels using vmax + step as the max.
-#     '''
-#     vmin = -vmax if vmin is None else vmin
-#     return np.arange(vmin, vmax + step, step)
+def create_levels(vmax:float, vmin:float=None, step:float=1)->np.ndarray:
+    '''
+    Ensures that all instances of creating levels using vmax + step as the max.
+    '''
+    vmin = -vmax if vmin is None else vmin
+    return np.arange(vmin, vmax + step, step)
 
 
 
-# def format_colorbar(pcolor, gs=None, cax:plt.Axes=None, tick_symbol:str='%'):
-#     '''
-#     Creates a colorbar that takes up all columns in the 0th row.
-#     The tick labels are percent
+def format_colorbar(pcolor, gs=None, cax:plt.Axes=None, tick_symbol:str='%'):
+    '''
+    Creates a colorbar that takes up all columns in the 0th row.
+    The tick labels are percent
     
-#     Reason
-#     ------
-#     In 07_exploring_consecutive_metrics_all_models_(nb_none) a colorbar 
-#     of this type is used repeatedly. 
-#     '''
-#     cax = plt.subplot(gs[0,:]) if not cax else cax
+    Reason
+    ------
+    In 07_exploring_consecutive_metrics_all_models_(nb_none) a colorbar 
+    of this type is used repeatedly. 
+    '''
+    cax = plt.subplot(gs[0,:]) if not cax else cax
 
-#     cbar = plt.colorbar(pcolor, cax=cax, orientation='horizontal')
-#     xticks = cbar.ax.get_xticks()
-#     cbar.ax.set_xticks(xticks)
-#     if tick_sybmol: cbar.ax.set_xticklabels([str(int(xt)) + tick_symbol for xt in xticks]);
-#     cbar.ax.tick_params(labelsize=labelsize)
+    cbar = plt.colorbar(pcolor, cax=cax, orientation='horizontal')
+    xticks = cbar.ax.get_xticks()
+    cbar.ax.set_xticks(xticks)
+    if tick_sybmol: cbar.ax.set_xticklabels([str(int(xt)) + tick_symbol for xt in xticks]);
+    cbar.ax.tick_params(labelsize=labelsize)
     
-#     return cbar
+    return cbar
 
 
-# def plot_heatmap(da:xr.DataArray, fig:plt.figure=None, gs=None, ax:plt.Axes=None, cax:plt.Axes=None,
-#                  figsize:tuple=None, cmap='Blues', extend='neither', max_color_lim:int=None,
-#                  levels:list=None, vmin=None, vmax=None, step=None, yticks:list=None,
-#                  xlims:tuple=None, font_scale=1, alpha:float=1, 
-#                  cbar_tile:str='', tick_labels=None, add_colorbar=True, cbar_label=None,
-#                  tick_offset=None, cut_ticks=1, patch=False, hspace=0,
-#                  title:str=None, axes_title:str=None, labelpad=100, rotation=0,
-#                  ylabel='Window Length\n(Years)', xlabel='Time After Emission Cessation (Years)', return_all=True,
-#                  logginglevel='ERROR', **kwargs):
-#     '''
-#     Plots a heatmatp of ds. Lots of options for entering different arguements
-#     '''
+def plot_heatmap(da:xr.DataArray, fig:plt.figure=None, gs=None, ax:plt.Axes=None, cax:plt.Axes=None,
+                 figsize:tuple=None, cmap='Blues', extend='neither', max_color_lim:int=None,
+                 levels:list=None, vmin=None, vmax=None, step=None, yticks:list=None,
+                 xlims:tuple=None, font_scale=1, alpha:float=1, 
+                 cbar_tile:str='', tick_labels=None, add_colorbar=True, cbar_label=None,
+                 tick_offset=None, cut_ticks=1, patch=False, hspace=0,
+                 title:str=None, axes_title:str=None, labelpad=100, rotation=0,
+                 ylabel='Window Length\n(Years)', xlabel='Time After Emission Cessation (Years)', return_all=True,
+                 logginglevel='ERROR', **kwargs):
+    '''
+    Plots a heatmatp of ds. Lots of options for entering different arguements
+    '''
     
-#     utils.change_logginglevel(logginglevel)
-#     logger.info(utils.function_name())
-#     logger.info(f'**{__file__}')
+    utils.change_logginglevel(logginglevel)
+    logger.info(utils.function_name())
+    logger.info(f'**{__file__}')
 
     
-#     figsize = figsize if figsize is not None else (plot_kwargs['width'], plot_kwargs['height'])
-#     fig = fig if fig is not None else plt.figure(figsize=figsize)
-#     gs = (gs if gs is not None else gridspec.GridSpec(2,1, height_ratios=[1, 0.1], hspace=plot_kwargs['hspace']+hspace))
+    figsize = figsize if figsize is not None else (plot_kwargs['width'], plot_kwargs['height'])
+    fig = fig if fig is not None else plt.figure(figsize=figsize)
+    gs = (gs if gs is not None else gridspec.GridSpec(2,1, height_ratios=[1, 0.1], hspace=plot_kwargs['hspace']+hspace))
     
-#     ax = ax if ax is not None else fig.add_subplot(gs[0])
+    ax = ax if ax is not None else fig.add_subplot(gs[0])
     
-#     if xlims is not None: da = da.isel(time=slice(*xlims))
-#     if not np.issubdtype(da.time.dtype, np.int64): da['time'] = da.time.dt.year.values
-#     if max_color_lim: da = da.isel(time=slice(None, max_color_lim))
+    if xlims is not None: da = da.isel(time=slice(*xlims))
+    if not np.issubdtype(da.time.dtype, np.int64): da['time'] = da.time.dt.year.values
+    if max_color_lim: da = da.isel(time=slice(None, max_color_lim))
     
     
-#     if levels is not None: colormap_kwargs = dict(levels=levels)
-#     elif vmax is not None and step is not None:
-#         levels = create_levels(vmin=vmin, vmax=vmax, step=step)
-#         colormap_kwargs = dict(levels=levels)
-#     else: colormap_kwargs = dict(robust=True)
-#     logger.info(f'{colormap_kwargs=}')
+    if levels is not None: colormap_kwargs = dict(levels=levels)
+    elif vmax is not None and step is not None:
+        levels = create_levels(vmin=vmin, vmax=vmax, step=step)
+        colormap_kwargs = dict(levels=levels)
+    else: colormap_kwargs = dict(robust=True)
+    logger.info(f'{colormap_kwargs=}')
         
-#     # ----> Plotting the heatmaps
-#     cs = da.plot(ax=ax, cmap=cmap, extend=extend, add_colorbar=False, alpha=alpha, levels=levels) # **colormap_kwargs
+    # ----> Plotting the heatmaps
+    cs = da.plot(ax=ax, cmap=cmap, extend=extend, add_colorbar=False, alpha=alpha, levels=levels) # **colormap_kwargs
     
-#     # ---> Labelling
-#     plotting_functions.format_axis(ax, xlabel=xlabel, ylabel=ylabel,labelpad=labelpad, font_scale=font_scale, rotation=rotation)
-#     format_ticks_as_years(ax, da.time)
-#     fig.suptitle(title, fontsize=plotting_functions.PlotConfig.title_size*font_scale, y=0.92)
-#     ax.set_title(axes_title, fontsize=plotting_functions.PlotConfig.title_size*font_scale)
-#     if xlims is not None: ax.set_xlim(xlims)
-#     if yticks is not None: ax.set_yticks(yticks)
+    # ---> Labelling
+    plotting_functions.format_axis(ax, xlabel=xlabel, ylabel=ylabel,labelpad=labelpad, font_scale=font_scale, rotation=rotation)
+    format_ticks_as_years(ax, da.time)
+    fig.suptitle(title, fontsize=plotting_functions.PlotConfig.title_size*font_scale, y=0.92)
+    ax.set_title(axes_title, fontsize=plotting_functions.PlotConfig.title_size*font_scale)
+    if xlims is not None: ax.set_xlim(xlims)
+    if yticks is not None: ax.set_yticks(yticks)
  
-#     # ---> Artist
-#     if patch: ax.add_artist(Rectangle((max_color_lim, 0), xlims[-1]-max_color_lim, 200, color='grey', alpha=0.2, zorder=-1000))
+    # ---> Artist
+    if patch: ax.add_artist(Rectangle((max_color_lim, 0), xlims[-1]-max_color_lim, 200, color='grey', alpha=0.2, zorder=-1000))
     
-#     # ---> Colorbar
-#     if add_colorbar:
-#         cax = cax if cax is not None else fig.add_subplot(gs[1])
-#         cbar = plotting_functions.create_colorbar(
-#             cs, cax=cax, levels=levels, extend=extend, orientation='horizontal',
-#             font_scale=font_scale, cbar_title=cbar_label, tick_offset=tick_offset,
-#             cut_ticks=cut_ticks, logginglevel=logginglevel)
+    # ---> Colorbar
+    if add_colorbar:
+        cax = cax if cax is not None else fig.add_subplot(gs[1])
+        cbar = plotting_functions.create_colorbar(
+            cs, cax=cax, levels=levels, extend=extend, orientation='horizontal',
+            font_scale=font_scale, cbar_title=cbar_label, tick_offset=tick_offset,
+            cut_ticks=cut_ticks, logginglevel=logginglevel)
         
-#     if return_all: return fig, gs, ax, cax
+    if return_all: return fig, gs, ax, cax
 
 
-# def sn_multi_window_in_time(da:xr.DataArray, exp_type:str=None,
-#                             temp_da:Union[xr.DataArray, xr.Dataset]=None,
-#                             stable_point_ds:xr.Dataset=None,
-#                             fig:plt.figure=None, gs=None, ax:plt.Axes=None, cax:plt.Axes=None,
-#                             figsize:tuple=None, cmap='Blues', extend='neither', max_color_lim:int=None,
-#                             levels:list=None, vmin=None, vmax=None, step=None, 
-#                             xlims:tuple=(None,None), font_scale=1.5, yticks:list=None, yticks_right:list=None,
-#                             cbar_tile:str='', tick_labels=None, add_colorbar=True, cbar_label=None,
-#                             tick_offset=None, cut_ticks=1, patch=False, hspace=0,
-#                             title:str=None, axes_title:str=None,rotation=0, 
-#                             ylabel='Window Length\n(Years)', xlabel='Time After Emission Cessation (Years)',
-#                             ax2_ylabel = 'Anomaly', add_legend=True, labelpad_left=100, labelpad_right=50,
-#                             bbox_to_anchor=(1, 1.3), stable_year_kwargs=dict(),
-#                             logginglevel='ERROR', return_all=True):
-#     '''
+def sn_multi_window_in_time(da:xr.DataArray, exp_type:str=None,
+                            temp_da:Union[xr.DataArray, xr.Dataset]=None,
+                            stable_point_ds:xr.Dataset=None,
+                            fig:plt.figure=None, gs=None, ax:plt.Axes=None, cax:plt.Axes=None,
+                            figsize:tuple=None, cmap='Blues', extend='neither', max_color_lim:int=None,
+                            levels:list=None, vmin=None, vmax=None, step=None, 
+                            xlims:tuple=(None,None), font_scale=1.5, yticks:list=None, yticks_right:list=None,
+                            cbar_tile:str='', tick_labels=None, add_colorbar=True, cbar_label=None,
+                            tick_offset=None, cut_ticks=1, patch=False, hspace=0,
+                            title:str=None, axes_title:str=None,rotation=0, 
+                            ylabel='Window Length\n(Years)', xlabel='Time After Emission Cessation (Years)',
+                            ax2_ylabel = 'Anomaly', add_legend=True, labelpad_left=100, labelpad_right=50,
+                            bbox_to_anchor=(1, 1.3), stable_year_kwargs=dict(),
+                            logginglevel='ERROR', return_all=True):
+    '''
     
-#     '''
-#     # mpl.rcParams.update(mpl.rcParamsDefault)
-#     plt.style.use('default')
-#     utils.change_logging_level(logginglevel)
-#     logger.info(utils.function_name())
-#     logger.info(f'**{__file__}')
+    '''
+    # mpl.rcParams.update(mpl.rcParamsDefault)
+    plt.style.use('default')
+    utils.change_logging_level(logginglevel)
+    logger.info(utils.function_name())
+    logger.info(f'**{__file__}')
     
      
-#     # ---> Creating plot
-#     fig = plt.figure(figsize=(plot_kwargs['width'], plot_kwargs['height'])) if fig is None else fig
-#     gs = gridspec.GridSpec(2,1, height_ratios=[1, 0.1], hspace=plot_kwargs['hspace']) if gs is None else gs
-#     ax = fig.add_subplot(gs[0]) if ax is None else ax
+    # ---> Creating plot
+    fig = plt.figure(figsize=(plot_kwargs['width'], plot_kwargs['height'])) if fig is None else fig
+    gs = gridspec.GridSpec(2,1, height_ratios=[1, 0.1], hspace=plot_kwargs['hspace']) if gs is None else gs
+    ax = fig.add_subplot(gs[0]) if ax is None else ax
     
-#     # ---> Stable Year 
-#     stable_year_kwargs = {'color':'k', 'linestyle':':', 'linewidth':2.5, **stable_year_kwargs}
-#     if stable_point_ds: stable_point_ds.time.plot(y='window', ax=ax, **stable_year_kwargs)
+    # ---> Stable Year 
+    stable_year_kwargs = {'color':'k', 'linestyle':':', 'linewidth':3.5, **stable_year_kwargs}
+    if stable_point_ds: stable_point_ds.time.plot(y='window', ax=ax, **stable_year_kwargs)
 
-#     # ---> Plotting colors
-#     fig, gs, ax, cax = plot_heatmap(da=da, fig=fig, gs=gs, ax=ax, cax=cax,
-#                  figsize=figsize, cmap=cmap, extend=extend, max_color_lim=max_color_lim,
-#                  levels=levels, vmin=vmin, vmax=vmax, step=step, 
-#                  xlims=xlims, font_scale=font_scale, yticks=yticks,
-#                  cbar_tile=cbar_tile, tick_labels=tick_labels, add_colorbar=add_colorbar, cbar_label=cbar_label,
-#                  tick_offset=tick_offset, cut_ticks=cut_ticks, patch=patch, hspace=hspace,
-#                  title=title, axes_title=axes_title, rotatiogn=rotation, 
-#                  ylabel=ylabel, xlabel=xlabel, labelpad=labelpad_left, logginglevel=logginglevel)
+    # ---> Plotting colors
+    fig, gs, ax, cax = plot_heatmap(da=da, fig=fig, gs=gs, ax=ax, cax=cax,
+                 figsize=figsize, cmap=cmap, extend=extend, max_color_lim=max_color_lim,
+                 levels=levels, vmin=vmin, vmax=vmax, step=step, 
+                 xlims=xlims, font_scale=font_scale, yticks=yticks,
+                 cbar_tile=cbar_tile, tick_labels=tick_labels, add_colorbar=add_colorbar, cbar_label=cbar_label,
+                 tick_offset=tick_offset, cut_ticks=cut_ticks, patch=patch, hspace=hspace,
+                 title=title, axes_title=axes_title, rotatiogn=rotation, 
+                 ylabel=ylabel, xlabel=xlabel, labelpad=labelpad_left, logginglevel=logginglevel)
 
-#     # ---> Temperature Anomaly
-#     if isinstance(temp_da, xr.DataArray):
-#         ax2 = ax.twinx()
-#         temp_da = temp_da.isel(time=slice(*xlims))
-#         if not np.issubdtype(temp_da.time.dtype, np.int64): temp_da['time'] = temp_da.time.dt.year.values-1
-#         plot_all_coord_lines(da=temp_da, ax=ax2, fig=fig, exp_type=exp_type, add_legend=add_legend,
-#                              font_scale=font_scale, bbox_to_anchor=bbox_to_anchor, yticks_right=yticks_right)
+    # ---> Temperature Anomaly
+    if isinstance(temp_da, xr.DataArray):
+        ax2 = ax.twinx()
+        temp_da = temp_da.isel(time=slice(*xlims))
+        if not np.issubdtype(temp_da.time.dtype, np.int64): temp_da['time'] = temp_da.time.dt.year.values-1
+        plot_all_coord_lines(da=temp_da, ax=ax2, fig=fig, exp_type=exp_type, add_legend=add_legend,
+                             font_scale=font_scale, bbox_to_anchor=bbox_to_anchor, yticks_right=yticks_right)
         
-#         plotting_functions.format_axis(ax2, xlabel=xlabel, ylabel=ax2_ylabel, font_scale=font_scale, labelpad=labelpad_right, rotation=rotation)
-#         ax2.set_title(None)
-#         plotting_functions.match_ticks(ax, ax2, 'left') # Note: Has to be left
+        plotting_functions.format_axis(ax2, xlabel=xlabel, ylabel=ax2_ylabel, font_scale=font_scale, labelpad=labelpad_right, rotation=rotation)
+        ax2.set_title(None)
+        plotting_functions.match_ticks(ax, ax2, 'left') # Note: Has to be left
         
-#     if return_all:
-#         try: return (fig, [ax, ax2, cax])
-#         except NameError: return (fig, [ax, cax])
+    if return_all:
+        try: return (fig, [ax, ax2, cax])
+        except NameError: return (fig, [ax, cax])
 
 
 # def plot_all_period_maps(ds, periods, suptitle = 'Percent of Years That are Stable', cmap = 'RdBu', col_increase = 1,
@@ -1054,34 +1054,35 @@ def generte_sn_cmap_and_levels(step:float=1/3):
     
 #     return fig, ax
 
-# def plot_average_stable_year(ds1, ds2, fig=None, ax=None, font_scale:float=1,
-#                              ylabel='Window Length (years)', xlabel='Time (Years)'):
-#     ''''
-#     Plotting the median year of stabilisation at each window for two 
-#     different datasets.
-#     '''
-#     if not fig: fig = plt.figure(figsize=(10, 8))
-#     if not ax: ax = fig.add_subplot(111)
+def plot_average_stable_year(ds1, ds2, fig=None, ax=None, font_scale:float=1,
+                             ylabel='Window Length (years)', xlabel='Time (Years)'):
+    ''''
+    Plotting the median year of stabilisation at each window for two 
+    different datasets.
+    '''
+    if not fig: fig = plt.figure(figsize=(10, 8))
+    if not ax: ax = fig.add_subplot(111)
 
-#     ds1_mean = ds1.mean(dim='model')
-#     ds2_mean = ds2.mean(dim='model')
-#     ds1_mean.time.plot(ax=ax, y='window', label='rolling', color='k', linewidth=1.5, linestyle='solid') 
-#     ds2_mean.time.plot(ax=ax,y='window', label='static', color='k', linewidth=1.5, linestyle='dashed') 
+    ds1_mean = ds1.median(dim='model')
+    ds2_mean = ds2.median(dim='model')
+    ds1_mean.plot(ax=ax, y='window', label='rolling', color='k', linewidth=1.5, linestyle='solid') 
+    ds2_mean.plot(ax=ax,y='window', label='static', color='k', linewidth=1.5, linestyle='dashed') 
 
-#     ylims = np.take(ds1_mean.window.values, [0,-1])
-#     all_x_values = np.concatenate([ds1_mean.time.values, ds2_mean.time.values]).flatten()
-#     xlims = [np.min(all_x_values), np.max(all_x_values)]
-#     ax.set_xlim(xlims)
-#     ax.set_ylim(ylims)
+    ylims = np.take(ds1_mean.window.values, [0,-1])
+    all_x_values = np.concatenate([ds1_mean.time.values, ds2_mean.time.values]).flatten()
+    xlims = [np.min(all_x_values), np.max(all_x_values)]
+    ax.set_xlim(xlims)
+    ax.set_ylim(ylims)
     
-#     leg = ax.legend(ncol=1, loc='best', frameon=True, facecolor='white', fontsize=14) 
-#     leg.set_title('Noise Type')
-#     leg.get_title().set_fontsize('16')
+    leg = ax.legend(ncol=1, loc='best', frameon=True, facecolor='white', fontsize=14) 
+    leg.set_title('Noise Type')
+    leg.get_title().set_fontsize('16')
     
-#     plotting_functions.format_axis(ax, xlabel=xlabel, ylabel=ylabel,font_scale=font_scale, invisible_spines=['top', 'right'])
-#     ax.set_title('')
+    plotting_functions.format_axis(ax, xlabel=xlabel, ylabel=ylabel,font_scale=font_scale,
+                                   invisible_spines=['top', 'right'])
+    ax.set_title('')
     
-#     return fig, ax
+    return fig, ax
 
 
 # # def map_plot_all_for_coords_2(da: xr.DataArray, dim: str, levels: ArrayLike, ncols:int = 3,

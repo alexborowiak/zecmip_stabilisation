@@ -5,6 +5,7 @@ from functools import partial
 import classes
 import utils
 
+
 import statsmodels.api as sm 
 lowess = sm.nonparametric.lowess
 
@@ -14,6 +15,29 @@ from typing import Optional, Dict, Callable
 
 
 logger = utils.get_notebook_logger()
+
+def space_mean(data):
+    '''
+    When calculating the space mean, the mean needs to be weighted by latitude.
+
+    Parameters
+    ----------
+    data: xr.Dataset with both lat and lon dimension
+
+    Returns
+    -------
+    xr.Dataset that has has the weighted space mean applied.
+
+    '''
+
+    # Lat weights
+    weights = np.cos(np.deg2rad(data.lat))
+    weights.name = 'weights'
+
+    # Calculating the weighted mean.
+    data_wmean = data.weighted(weights).mean(dim = ['lat','lon'])
+    
+    return data_wmean
 
     
 def polynomial_fit(y: ArrayLike, x:Optional[ArrayLike] = None, order:float=None, deg:float=None, 

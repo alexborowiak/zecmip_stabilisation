@@ -1,10 +1,15 @@
 import os, sys
 import dask
 import itertools
+import pandas as pd
 import numpy as np
 import xarray as xr
-from typing import Optional
+from functools import partial
+
+from itertools import takewhile
+from typing import Optional, List
 from numpy.typing import ArrayLike
+
 
 # Custom Module Imports
 sys.path.append(os.path.join(os.getcwd(), 'Documents', 'zecmip_stabilisation_drafts'))
@@ -179,12 +184,26 @@ def rolling_noise(data, window:int, min_periods = 0,center=True,logginglevel='ER
     return noise_da
 
 
+def static_noise(data, logginglevel='ERROR') -> xr.DataArray:
+    
+    utils.change_logging_level(logginglevel)
+
+    logger.info("Calculting the static noise")
+
+    noise_da = data.std(dim='time')
+    noise_da.name = 'noise'
+    #noise_da = noise_da.expand_dims('window').assign_coords(window=('window', [window]))
+    
+    return noise_da
+
 
 def signal_to_noise_ratio(
     ds: xr.Dataset, 
     window:int,
     detrended_data: xr.Dataset = None, 
-    return_all: bool = False
+    noise_type = 'rolling',
+    return_all: bool = False,
+    logginglevel='ERROR',
 ) -> xr.Dataset:
     """
     Calculate the signal-to-noise ratio for a given dataset.
@@ -200,19 +219,47 @@ def signal_to_noise_ratio(
     ratio datasets.
     """
     # Calculate the rolling signal
-    signal_ds = rolling_signal(ds, window)  # Use the rolling_signal function to calculate the signal
+    utils.change_logginglevel(logginglevel)
+    signal_ds = rolling_signal(ds, window, logginglevel=logginglevel)  
+    # Use the rolling_signal function to calculate the signal
 
     # Calculate the rolling noise
     # If detrended data is provided, use it; otherwise, use the original dataset
-    noise_ds = rolling_noise(ds if detrended_data is None else detrended_data, window)  
-
+    if noise_type == 'rolling':
+        noise_func = rolling_noise
+        noise_func = partial(noise_func, window=window)
+    elif noise_type == 'static': noise_func = static_noise
+    logger.info(f'{noise_type=}')
+    noise_ds = noise_func(ds if detrended_data is None else detrended_data, logginglevel=logginglevel)  
+    logger.debug(noise_ds)
     # Calculate the signal-to-noise ratio
     sn_ratio_ds = signal_ds / noise_ds  # Divide the signal by the noise to get the ratio
 
+    sn_ratio_ds.name = 'sn'
     # Return the desired datasets
     if return_all:
         return signal_ds, noise_ds, sn_ratio_ds  # Return all datasets if requested
     return sn_ratio_ds  # Otherwise, return only the signal-to-noise ratio dataset
+
+
+def upper_and_lower_bounds(ds, qlower, qupper):
+    # Choose percentile function based on whether data is chunked
+    percentile_func = xe.dask_percentile if ds.chunks else np.nanpercentile
+
+    # Calculate upper and lower bounds of SNR using specified percentiles
+    ub_ds = ds.reduce(percentile_func, q=qupper, dim='time').compute()
+    lb_ds = ds.reduce(percentile_func, q=qlower, dim='time').compute()
+
+    # Merge upper and lower bounds into a single dataset
+    bounds_ds = xr.merge(
+        [
+            lb_ds.to_dataset(name='lower_bound'),
+            ub_ds.to_dataset(name='upper_bound')
+        ], 
+        compat='override'
+    ).compute()
+
+    return bounds_ds
 
 
 def signal_to_noise_ratio_bounds(ds, window:int, **kwargs):
@@ -238,24 +285,9 @@ def signal_to_noise_ratio_bounds(ds, window:int, **kwargs):
     qupper = kwargs.pop('qupper', 95)
 
     # Calculate signal-to-noise ratio
-    sn_ratio_ds = signal_to_noise_ratio(ds=ds, window=window, **kwargs)
-    sn_ratio_ds = sn_ratio_ds.compute()
+    sn_ratio_ds = signal_to_noise_ratio(ds=ds, window=window, **kwargs).compute()
 
-    # Choose percentile function based on whether data is chunked
-    percentile_func = xe.dask_percentile if sn_ratio_ds.chunks else np.nanpercentile
-
-    # Calculate upper and lower bounds of SNR using specified percentiles
-    sn_ratio_ub_ds = sn_ratio_ds.reduce(percentile_func, q=qupper, dim='time').compute()
-    sn_ratio_lb_ds = sn_ratio_ds.reduce(percentile_func, q=qlower, dim='time').compute()
-
-    # Merge upper and lower bounds into a single dataset
-    sn_ratio_bounds_ds = xr.merge(
-        [
-            sn_ratio_lb_ds.to_dataset(name='lower_bound'),
-            sn_ratio_ub_ds.to_dataset(name='upper_bound')
-        ], 
-        compat='override'
-    ).compute()
+    sn_ratio_bounds_ds = upper_and_lower_bounds(sn_ratio_ds, qlower, qupper)
 
     return sn_ratio_bounds_ds
 
@@ -344,6 +376,10 @@ def multi_window_func(
     result_ds = xr.concat(to_concat, dim='window').compute()
     return result_ds
 
+
+
+
+
 def multi_window_func_with_model_split(
     func,
     ds, 
@@ -392,7 +428,8 @@ def signal_to_noise_ratio_multi_window(
     Returns:
     xr.Dataset: Dataset containing signal-to-noise ratio for each window
     """
-    logginglevel = kwargs.pop('logginglevel', 'ERROR')
+    
+    logginglevel = kwargs.get('logginglevel', 'ERROR')
     utils.change_logginglevel(logginglevel)
 
     # Using dask delayed or not?
@@ -420,6 +457,29 @@ def signal_to_noise_ratio_multi_window(
     return output_ds
 
 
+
+def get_increase_and_decreasing_stability_number(ds:xr.Dataset) -> xr.DataArray:
+    '''
+    Dataset needs to have the data_vars: 'signal_to_noise', 'upper_bound', 'lower_bounds'
+    Divides the datset into inncreasing unstable, decreasing unstable, and stable.
+    
+    These can then be counted to view the number of unstable and stable models at
+    any point.
+    
+    '''
+    decreasing_unstable_da = ds.where(ds.signal_to_noise < ds.lower_bound).signal_to_noise
+    increasing_unstable_da = ds.where(ds.signal_to_noise > ds.upper_bound).signal_to_noise
+    
+    
+    stable_da = ds.utils.between('signal_to_noise',
+                                 less_than_var='upper_bound', greater_than_var='lower_bound').signal_to_noise
+    unstable_da = ds.utils.above_or_below(
+        'signal_to_noise', greater_than_var='upper_bound', less_than_var='lower_bound').signal_to_noise
+    
+    return xr.concat([decreasing_unstable_da, increasing_unstable_da, unstable_da, stable_da], 
+                     pd.Index(['decreasing', 'increasing', 'unstable', 'stable'], name='stability'))
+
+
 def get_average_after_stable_year(arr, year):
     """
     Calculate the average of a subset of the input array, starting from the given year and extending 20 years forward.
@@ -444,170 +504,259 @@ def get_average_after_stable_year(arr, year):
     # Calculate and return the mean of the subset array
     return np.mean(arr_subset)
 
-def get_year_stable(arr:ArrayLike, window:int=None, time:Optional[ArrayLike]=None, stable_length:int=None, 
-                    logginglevel='ERROR'
-                    ) -> int:
+
+
+
+def count_consecutive_ones(arr: List[int]) -> int:
     """
-    This function calculates the year when stability occurs.
+    Counts the number of consecutive 1s at the start of the array.
 
     Parameters:
-    arr (ArrayLike): Input array to check for stability.
-    stable_length (int, optional): The minimum length of stability. Defaults to 20.
-    time (ArrayLike, optional): Time array corresponding to arr. Defaults to None.
+    arr (List[int]): The input list containing 1s and 0s.
 
     Returns:
-    int: The year when stability occurs. Returns np.nan if no stability is found.
-
-    Example:
-    >>> arr = [1, 2, 3, np.nan, np.nan, np.nan, np.nan, 4, 5, 6, np.nan, np.nan, np.nan, np.nan, np.nan, np.nan, 7, 8, 9]
-    >>> get_year_stable(arr)
-    3
+    int: The count of consecutive 1s at the beginning of the array.
     """
-    utils.change_logginglevel(logginglevel)
-    if stable_length is None:stable_length = int(window/2)
-
-    # Create a mask where arr is finite (not NaN or infinity)
-    condition = np.where(np.isfinite(arr), True, False)
-    # Group the mask by consecutive values
-    condition_groupby = []
-    for key, group in itertools.groupby(condition):
-        condition_groupby.append((key, len(list(group))))
-
-    logger.debug(condition_groupby)
-    # Find the indices where stability occurs (i.e., where the condition is False and the length is greater than stable_length)
-    condition_groupby_stable_arg = [arg for arg, (key, length) in enumerate(condition_groupby) 
-                                   if not key and length > stable_length]
-    logger.debug(condition_groupby_stable_arg)
-
-    # If stability is found, get the index of the first occurrence
-    if len(condition_groupby_stable_arg) > 0: 
-        condition_groupby_stable_arg = condition_groupby_stable_arg[0]
-    # There has not been a length long enough, but the last window, is a stable period
-    elif len(condition_groupby_stable_arg) == 0 and condition_groupby[-1][0] == False: 
-        condition_groupby_stable_arg = len(condition_groupby)-1
-    else: return np.nan  # Return NaN if no stability is found
-
+    # Use takewhile to generate an iterator that stops when the first 0 is encountered
+    consecutive_ones = takewhile(lambda x: x == 1, arr)
     
-    # Calculate the year when stability occurs
-    stable_arg = np.sum(list(map(lambda x:x[-1], condition_groupby[:condition_groupby_stable_arg])))
+    # Count the elements returned by takewhile
+    count = sum(1 for _ in consecutive_ones)
     
-    #np.nansum([length for key, length in condition_groupby[:condition_groupby_stable_arg]])
+    return count
 
-    
-
-    if np.isnan(stable_arg): return stable_arg
-    stable_arg = int(stable_arg) if isinstance(stable_arg, float) else stable_arg
-    if time is not None: return time[stable_arg]
-
-    return stable_arg
-
-
-def convert_arr_to_groupby_condition(condition):
+def find_stability_index(arr: np.ndarray, window: int, fraction: float = 0.5) -> int:
     """
-    Convert the condition array to a grouped condition array.
+    Determines the index at which stability is achieved in the input array.
+
+    The algorithm works by sliding a window of a specified length over the array,
+    checking each subset to determine if the fraction of unstable values (i.e., 
+    values that are not finite) is below a certain threshold. If the fraction of 
+    unstable values in a subset is below the threshold, the index where stability 
+    is achieved is determined based on the last unstable value within the subset.
+
+    If stability is achieved in the current subset, the function further checks if 
+    the next element after the stable period is also stable by counting the number 
+    of consecutive stable elements. The final index of stability is adjusted 
+    accordingly.
+
+    If stability is never achieved within the array, the function returns an 
+    index calculated as the last checked index plus half the window length.
 
     Parameters:
-    condition (ArrayLike): The input condition array.
+    arr (np.ndarray): The input array containing numerical values.
+    window (int): The length of the window used for stability checking.
+    fraction (float): The threshold fraction of instability (default is 0.5).
 
     Returns:
-    list: A list of tuples containing the condition and the length of each group.
+    int: The index at which stability is first achieved.
     """
-    
-    # Create a mask where arr is finite (not NaN or infinity)
-    
-    # Group the mask by consecutive values
-    condition_groupby = []
-    for key, group in itertools.groupby(condition):
-        condition_groupby.append((key, len(list(group))))
-    return condition_groupby
+    finite_arr = np.isfinite(arr)
 
+    lenght_of_selection = np.min([20, int(window/2)])#window#int(window/2)
 
-def extract_arg(condition_groupby, stable_length):
-    """
-    Extract the index of the first stable group from the grouped condition array.
-
-    Parameters:
-    condition_groupby (list): The grouped condition array.
-    stable_length (int): The minimum length for a stable group.
-
-    Returns:
-    int: The index of the first stable group. Returns NaN if no stability is found.
-    """
-    
-    condition_groupby_stable_arg = [arg for arg, (key, length) in enumerate(condition_groupby) 
-                                   if not key and length > stable_length]
-    # If stability is found, get the index of the first occurrence
-    if len(condition_groupby_stable_arg) > 0: 
-        condition_groupby_stable_arg = condition_groupby_stable_arg[0]
-    # There has not been a length long enough, but the last window, is a stable period
-    elif len(condition_groupby_stable_arg) == 0 and condition_groupby[-1][0] == False: 
-        condition_groupby_stable_arg = len(condition_groupby)-1
-    else: 
-        return np.nan  # Return NaN if no stability is found
-    
-    # Calculate the year when stability occurs
-    stable_arg = np.sum(list(map(lambda x:x[-1], condition_groupby[:condition_groupby_stable_arg])))
-    
-    return stable_arg
-
-def get_year_stable_v2(arr:ArrayLike, window:int=None, time:Optional[ArrayLike]=None) -> int:
-    """
-    This function calculates the index of the first year with stable data.
-    Note: This is different from get_stable_year, as there is now a condition on
-    how long everything must be stable for.
-
-    Parameters:
-    arr (ArrayLike): The input array.
-    window (int): The window size for stability calculation. Default is None.
-    time (Optional[ArrayLike]): The time array. Default is None.
-
-    Returns:
-    int: The index of the first year with stable data. If time is provided, returns the corresponding time value.
-    Example:
-    >>> arr = [1, 2, 3, np.nan, np.nan, np.nan, np.nan, 4, 5, 6, np.nan, np.nan, np.nan, np.nan, np.nan, np.nan, 7, 8, 9]
-    >>> get_year_stable(arr)
-    3
-    """
-    
-    # Calculate the stable length based on the window size
-    stable_length = int(window/4)
-    if stable_length < 10: 
-        stable_length = 10  # Minimum stable length is 10
-    
-    # Create a condition array where finite values in arr are True and non-finite are False
-    condition = np.where(np.isfinite(arr), True, False)
-    
-    # Initialize a flag for stability
-    found_stability = False
-    
-    # Loop until stability is found
-    while not found_stability:
-        # Group the condition array and extract the index of the first stable group
-        condition_groupby = convert_arr_to_groupby_condition(condition)
-        stable_arg = extract_arg(condition_groupby, stable_length)
+    for sel_start in range(len(finite_arr)-lenght_of_selection):
+        # Make sub-selection
+        finite_arr_selection = finite_arr[sel_start:sel_start+lenght_of_selection]
+        # Number that are unstable (unstable =1, stable = 0)
+        number_unstable = np.sum(finite_arr_selection)
+        # Fraction that is unstalbe
+        fraction_unstable = number_unstable/lenght_of_selection
         
-        # If the first stable group is at index 0, return 0
-        if stable_arg == 0 or np.isnan(stable_arg): 
-            return stable_arg
-        
-        # Calculate the start of the sample period
-        start_of_sample = stable_arg - 10
-        start_of_sample = start_of_sample if start_of_sample > 0 else 0
-        
-        # Count the number of stable points in the sample period
-        #print(start_of_sample,stable_arg)
-        total_stable_in_period = np.count_nonzero(condition[start_of_sample:stable_arg])
-        
-        # If there are at least 5 stable points, mark as stable
-        if total_stable_in_period >= 5:
-            found_stability = True
-        else:
-            # If not enough points for stability, mark the period as unstable
-            condition[start_of_sample:stable_arg] = False
+        # If < 0.2 is unstalbe, then call stability immediately. Do not add consecs     
+        if fraction_unstable < 0.33:
+            return sel_start
+
+        # If the fraction is less than fraciton - stability is achieved
+        if fraction_unstable < fraction:
+            # Figure out where the last unstable value occurs in selection
+            last_arg = np.argwhere(finite_arr_selection==1)
+            last_arg = last_arg[-1][-1] if len(last_arg) > 0 else 0
+            last_arg = last_arg+1 # Always one behind, so add 1
+            stable_year = sel_start + last_arg
+            
+            # The next element is one after the stable year - so why should it be stable there?
+            if finite_arr[stable_year+1] == 1: 
+                cosec_after_stabilisation = count_consecutive_ones(finite_arr[stable_year+1:])
+                stable_year = stable_year + cosec_after_stabilisation+1
+            return stable_year
+
+    # Stability never achieved return arg + the offset
+    return sel_start + int(window/2)
+
+
+
+#####!!!!!!!!!!!!!!
+##### DO NOT DELETE
+##### These are old algorithms to determine the stability of the climate. 
+##### They are (should not) be used in notebooks, but are worth keep
+#####!!!!!!!!!!!!!!
+
+
+# def get_year_stable(arr:ArrayLike, window:int=None, time:Optional[ArrayLike]=None, stable_length:int=None, 
+#                     logginglevel='ERROR'
+#                     ) -> int:
+#     """
+#     This function calculates the year when stability occurs.
+
+#     Parameters:
+#     arr (ArrayLike): Input array to check for stability.
+#     stable_length (int, optional): The minimum length of stability. Defaults to 20.
+#     time (ArrayLike, optional): Time array corresponding to arr. Defaults to None.
+
+#     Returns:
+#     int: The year when stability occurs. Returns np.nan if no stability is found.
+
+#     Example:
+#     >>> arr = [1, 2, 3, np.nan, np.nan, np.nan, np.nan, 4, 5, 6, np.nan, np.nan, np.nan, np.nan, np.nan, np.nan, 7, 8, 9]
+#     >>> get_year_stable(arr)
+#     3
+#     """
+#     utils.change_logginglevel(logginglevel)
+#     if stable_length is None:stable_length = int(window/2)
+
+#     # Create a mask where arr is finite (not NaN or infinity)
+#     condition = np.where(np.isfinite(arr), True, False)
+#     # Group the mask by consecutive values
+#     condition_groupby = []
+#     for key, group in itertools.groupby(condition):
+#         condition_groupby.append((key, len(list(group))))
+
+#     logger.debug(condition_groupby)
+#     # Find the indices where stability occurs (i.e., where the condition is False and the length is greater than stable_length)
+#     condition_groupby_stable_arg = [arg for arg, (key, length) in enumerate(condition_groupby) 
+#                                    if not key and length > stable_length]
+#     logger.debug(condition_groupby_stable_arg)
+
+#     # If stability is found, get the index of the first occurrence
+#     if len(condition_groupby_stable_arg) > 0: 
+#         condition_groupby_stable_arg = condition_groupby_stable_arg[0]
+#     # There has not been a length long enough, but the last window, is a stable period
+#     elif len(condition_groupby_stable_arg) == 0 and condition_groupby[-1][0] == False: 
+#         condition_groupby_stable_arg = len(condition_groupby)-1
+#     else: return np.nan  # Return NaN if no stability is found
+
     
-    # If time is provided, return the corresponding time value
-    if time is not None: 
-        return time[stable_arg]
+#     # Calculate the year when stability occurs
+#     stable_arg = np.sum(list(map(lambda x:x[-1], condition_groupby[:condition_groupby_stable_arg])))
     
-    # Otherwise, return the index of the first year with stable data
-    return stable_arg
+#     #np.nansum([length for key, length in condition_groupby[:condition_groupby_stable_arg]])
+
+    
+
+#     if np.isnan(stable_arg): return stable_arg
+#     stable_arg = int(stable_arg) if isinstance(stable_arg, float) else stable_arg
+#     if time is not None: return time[stable_arg]
+
+#     return stable_arg
+
+
+# def convert_arr_to_groupby_condition(condition):
+#     """
+#     Convert the condition array to a grouped condition array.
+
+#     Parameters:
+#     condition (ArrayLike): The input condition array.
+
+#     Returns:
+#     list: A list of tuples containing the condition and the length of each group.
+#     """
+    
+#     # Create a mask where arr is finite (not NaN or infinity)
+    
+#     # Group the mask by consecutive values
+#     condition_groupby = []
+#     for key, group in itertools.groupby(condition):
+#         condition_groupby.append((key, len(list(group))))
+#     return condition_groupby
+
+
+# def extract_arg(condition_groupby, stable_length):
+#     """
+#     Extract the index of the first stable group from the grouped condition array.
+
+#     Parameters:
+#     condition_groupby (list): The grouped condition array.
+#     stable_length (int): The minimum length for a stable group.
+
+#     Returns:
+#     int: The index of the first stable group. Returns NaN if no stability is found.
+#     """
+    
+#     condition_groupby_stable_arg = [arg for arg, (key, length) in enumerate(condition_groupby) 
+#                                    if not key and length > stable_length]
+#     # If stability is found, get the index of the first occurrence
+#     if len(condition_groupby_stable_arg) > 0: 
+#         condition_groupby_stable_arg = condition_groupby_stable_arg[0]
+#     # There has not been a length long enough, but the last window, is a stable period
+#     elif len(condition_groupby_stable_arg) == 0 and condition_groupby[-1][0] == False: 
+#         condition_groupby_stable_arg = len(condition_groupby)-1
+#     else: 
+#         return np.nan  # Return NaN if no stability is found
+    
+#     # Calculate the year when stability occurs
+#     stable_arg = np.sum(list(map(lambda x:x[-1], condition_groupby[:condition_groupby_stable_arg])))
+    
+#     return stable_arg
+
+# def get_year_stable_v2(arr:ArrayLike, window:int=None, time:Optional[ArrayLike]=None) -> int:
+#     """
+#     This function calculates the index of the first year with stable data.
+#     Note: This is different from get_stable_year, as there is now a condition on
+#     how long everything must be stable for.
+
+#     Parameters:
+#     arr (ArrayLike): The input array.
+#     window (int): The window size for stability calculation. Default is None.
+#     time (Optional[ArrayLike]): The time array. Default is None.
+
+#     Returns:
+#     int: The index of the first year with stable data. If time is provided, returns the corresponding time value.
+#     Example:
+#     >>> arr = [1, 2, 3, np.nan, np.nan, np.nan, np.nan, 4, 5, 6, np.nan, np.nan, np.nan, np.nan, np.nan, np.nan, 7, 8, 9]
+#     >>> get_year_stable(arr)
+#     3
+#     """
+    
+#     # Calculate the stable length based on the window size
+#     stable_length = int(window/4)
+#     if stable_length < 10: 
+#         stable_length = 10  # Minimum stable length is 10
+    
+#     # Create a condition array where finite values in arr are True and non-finite are False
+#     condition = np.where(np.isfinite(arr), True, False)
+    
+#     # Initialize a flag for stability
+#     found_stability = False
+    
+#     # Loop until stability is found
+#     while not found_stability:
+#         # Group the condition array and extract the index of the first stable group
+#         condition_groupby = convert_arr_to_groupby_condition(condition)
+#         stable_arg = extract_arg(condition_groupby, stable_length)
+        
+#         # If the first stable group is at index 0, return 0
+#         if stable_arg == 0 or np.isnan(stable_arg): 
+#             return stable_arg
+        
+#         # Calculate the start of the sample period
+#         start_of_sample = stable_arg - 10
+#         start_of_sample = start_of_sample if start_of_sample > 0 else 0
+        
+#         # Count the number of stable points in the sample period
+#         #print(start_of_sample,stable_arg)
+#         total_stable_in_period = np.count_nonzero(condition[start_of_sample:stable_arg])
+        
+#         # If there are at least 5 stable points, mark as stable
+#         if total_stable_in_period >= 5:
+#             found_stability = True
+#         else:
+#             # If not enough points for stability, mark the period as unstable
+#             condition[start_of_sample:stable_arg] = False
+    
+#     # If time is provided, return the corresponding time value
+#     if time is not None: 
+#         return time[stable_arg]
+    
+#     # Otherwise, return the index of the first year with stable data
+#     return stable_arg
