@@ -209,7 +209,7 @@ def get_tick_locator(vals: np.ndarray, num_major_ticks: int=10, fraction_minor_t
 
 
 
-def convert_to_0_start_cftime(time, freq='Y'):
+def convert_to_0_start_cftime(time, freq='YE'):
     """
     Convert time values to a new time range with a starting year of 0 (year 1 AD).
 

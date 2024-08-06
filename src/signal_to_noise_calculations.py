@@ -1,15 +1,14 @@
-import os, sys
+import os
+import sys
 import dask
 import itertools
 import pandas as pd
 import numpy as np
 import xarray as xr
 from functools import partial
-
 from itertools import takewhile
 from typing import Optional, List
 from numpy.typing import ArrayLike
-
 
 # Custom Module Imports
 sys.path.append(os.path.join(os.getcwd(), 'Documents', 'zecmip_stabilisation_drafts'))
@@ -32,7 +31,7 @@ def grid_gradient(
 ) -> float:
     """
     Calculate a gradient-like signal along a specified axis in a 2D array.
-    This is a more efficeitn for calculting the gradient than inbuilt python methods
+    This is a more efficient method for calculating the gradient than inbuilt Python methods.
 
     Args:
     - arr (ArrayLike): Input array.
@@ -58,6 +57,7 @@ def grid_gradient(
     xs_mult_arr = np.apply_along_axis(mult_func, axis=axis, arr=arr, arr2=xs)
     numerator = mean_xs * np.nanmean(arr, axis=axis) - np.nanmean(xs_mult_arr, axis=axis)
     return numerator / denominator
+
 
 def adjust_time_from_rolling(data, window, logginglevel='ERROR'):
         """
@@ -454,6 +454,7 @@ def signal_to_noise_ratio_multi_window(
             to_concat = dask.compute(to_concat)[0]
         # Concatenate results along a new dimension named 'window' and compute
         output_ds = xr.concat(to_concat, dim='window').compute()
+    output_ds.name = 'sn'
     return output_ds
 
 
@@ -553,7 +554,7 @@ def find_stability_index(arr: np.ndarray, window: int, fraction: float = 0.5) ->
     """
     finite_arr = np.isfinite(arr)
 
-    lenght_of_selection = np.min([20, int(window/2)])#window#int(window/2)
+    lenght_of_selection = np.min([20, window])#window#int(window/2)
 
     for sel_start in range(len(finite_arr)-lenght_of_selection):
         # Make sub-selection

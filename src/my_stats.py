@@ -106,6 +106,7 @@ def apply_detrend_as_ufunc(
                       output_dtypes=float, dask='parallelized')
     
     try:
+        # print(da)
         to_return = xr.apply_ufunc(func1d, da, **ufunc_dict)
     except ValueError as e:
         logger.debug(e)
@@ -143,10 +144,11 @@ def trend_fit(da:xr.DataArray, method:str=None, order:int=1, lowess_window:int=3
     utils.change_logging_level(logginglevel)
     
     if not method:
-        raise ValueError(f'method must be specified. Method options:  {[i.value for i in classes.detrendingMethods]}')
+        raise ValueError(
+            f'method must be specified. Method options:  {[i.value for i in classes.detrendingMethods]}')
 
-    if da.chunks is not None:
-        da = da.unify_chunks()
+    # if da.chunks is not None:
+    #     da = da.unify_chunks()
     
     logger.debug(f'{method=}\n data \n {da}')
     
