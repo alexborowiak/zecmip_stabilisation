@@ -11,16 +11,21 @@ from typing import Optional, List
 from numpy.typing import ArrayLike
 
 # Custom Module Imports
-sys.path.append(os.path.join(os.getcwd(), 'Documents', 'zecmip_stabilisation_drafts'))
+sys.path.append(os.path.join(os.getcwd(), 'Documents', 'zecmip_stabilisation'))
 import constants
 sys.path.append(constants.MODULE_DIR)
 import utils
 import xarray_extender as xe
 logger = utils.get_notebook_logger()
+sys.path.append(os.path.join(os.getcwd(), 'Documents', 'list_xarray'))
+from listXarray import listXarray
 
 import warnings
 warnings.filterwarnings("ignore", category=RuntimeWarning, module='dask.*')
 warnings.filterwarnings("ignore", category=Warning)
+
+
+
 
 def grid_gradient(
     arr: ArrayLike, 
@@ -313,18 +318,23 @@ def signal_to_noise_ratio_bounds_multi_window(
     logginglevel = kwargs.pop('logginglevel', 'ERROR')
     utils.change_logginglevel(logginglevel)
     with warnings.catch_warnings():
-        warnings.filterwarnings("ignore", message="All-NaN slice encountered", category=RuntimeWarning)
+        warnings.filterwarnings("ignore", message="All-NaN slice encountered",
+                                category=RuntimeWarning)
         
         # Initialize list to store results
         to_concat = []
-        
+
+        parallel = kwargs.pop('parallel', False)
+        if parallel:
+            signal_to_noise_ratio_bounds_func = dask.delayed(signal_to_noise_ratio_bounds)
+        else:
+            signal_to_noise_ratio_bounds_func = signal_to_noise_ratio_bounds
         # Loop over each window size
         for window in windows:
-            # logger.info(window)
-            print(window, end='')
+            out_data = signal_to_noise_ratio_bounds_func(ds, window, **kwargs)
             # Calculate signal-to-noise ratio bounds for current window
-            to_concat.append(signal_to_noise_ratio_bounds(ds, window, **kwargs))
-        
+            to_concat.append(out_data)
+        if parallel: to_concat = dask.compute(*to_concat)
         # Concatenate results along a new dimension named 'window'
         outpout_ds = xr.concat(to_concat, dim='window')
     return outpout_ds
@@ -356,7 +366,7 @@ def multi_window_func(
     logger.debug(f'Multi window func - applying function {func}')
 
     # Using dask delayed or not?
-    func = dask.delayed(func) if parallel else signal_to_noise_ratio
+    func = dask.delayed(func) if parallel else func
     
   
     # Initialize list to store results
@@ -366,14 +376,19 @@ def multi_window_func(
     for window in windows:
         logger.info(window)
         # Calculate signal-to-noise ratio for current window
-        output_ds = func(ds, window, **kwargs)
-        to_concat.append(output_ds)
+        if isinstance(ds, listXarray):
+            output_data = ds(func, window, **kwargs)
+        else:
+            output_data = func(ds, window, **kwargs)
+        to_concat.append(output_data)
 
-    # Compute the dask object (for some reason make it list of list)
-    if parallel: 
-        to_concat = dask.compute(*to_concat)
+    # Compute the dask object
+    if parallel:  to_concat = dask.compute(*to_concat)
     # Concatenate results along a new dimension named 'window' and compute
-    result_ds = xr.concat(to_concat, dim='window').compute()
+    if isinstance(to_concat[0], (xr.Dataset, xr.DataArray)):
+        result_ds = xr.concat(to_concat, dim='window').compute()
+    else:
+        result_ds = to_concat
     return result_ds
 
 
@@ -401,9 +416,14 @@ def multi_window_func_with_model_split(
     model_output_list = []
     for model in ds.model.values:
         logger.info(model)
-        ds_model = ds.sel(model=model).dropna(dim='time')
-        # Call the first function
-        result_ds = multi_window_func(func, ds_model, windows, parallel, **kwargs)
+        if isinstance(esmpi_data, listXarray):
+            ds_model = ds[model].dropna(dim='time')
+            # Call the first function
+            result_ds = multi_window_func(func, ds_model, windows, parallel, **kwargs)
+        else: 
+            ds_model = ds.sel(model=model).dropna(dim='time')
+            # Call the first function
+            result_ds = multi_window_func(func, ds_model, windows, parallel, **kwargs)
         model_output_list.append(result_ds)
         
     to_retrun_ds = xr.concat(model_output_list, dim='model')
