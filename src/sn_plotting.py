@@ -18,6 +18,7 @@ from cartopy.mpl.gridliner import LONGITUDE_FORMATTER, LATITUDE_FORMATTER
 ArrayLike = List[float]
 
 
+
 # Local imports (if applicable)
 import utils
 # logging.basicConfig(format="%(message)s", filemode='w', stream = sys.stdout)
@@ -432,13 +433,16 @@ def map_plot_all_for_coords_3(da: xr.DataArray, levels: ArrayLike, dim: str=None
 
     # Create a list of subplots (axes) based on the number of plots calculated above.
     # If `axes` is already provided, use the existing list of axes.
-    axes = ([fig.add_subplot(gs[i], projection=projection(central_longitude=central_longitude)) for i in range(0, num_plots)]
+    axes = (
+        [fig.add_subplot(
+            gs[i], projection=projection(central_longitude=central_longitude)) for i in range(0, num_plots)]
             if axes is None else axes)
 
     # Initialize a flag to keep track of whether the colorbar has been added already.
     colobar_completed = False
 
-    # Check if the levels for all plots are the same (a single set of levels) or different (individual levels for each plot).
+    # Check if the levels for all plots are the same (a single set of levels) or different (individual levels for
+    # each plot).
     logger.debug(f' - {levels=}')
     matching_levels_for_all = isinstance(levels[0], (int, float, np.int64, np.float32, np.float64))
     logger.debug(f' - {matching_levels_for_all=}')
@@ -466,25 +470,20 @@ def map_plot_all_for_coords_3(da: xr.DataArray, levels: ArrayLike, dim: str=None
         elif ptype == 'imshow': c = c = da_to_use.plot(**plot_kwargs)
         else: raise TypeError(f'ptype must be one of [contourf, imshow]. Entered {ptype=}')
 
-        
-                        # c = ax.contourf(da_to_use.lon.values, da_to_use.lat.values, da_to_use.values,
-            #             transform=ccrs.PlateCarree(), cmap=cmap, levels=levels_to_use, extend=extend)
 
-
-        # Optionally, if `max_stabilisation_year` is provided, overlay a blackout or stipple plot for specific data values.
-        # The method of overlay is determined by `stabilisation_method`.
-        # Note: The details of the `plot_stippled_data` function are not provided here.
         if max_stabilisation_year:
             da_binary = xr.where(da_to_use > max_stabilisation_year, 1, 0)
             if stabilisation_method == None:
                 pass
             elif stabilisation_method == 'blackout':
                 ax.contourf(da_binary.lon.values, da_binary.lat.values, da_binary.values,
-                            transform=ccrs.PlateCarree(), cmap=black_white_cmap, levels=[0, 0.5, 1], extend='neither')
+                            transform=ccrs.PlateCarree(), cmap=black_white_cmap, levels=[0, 0.5, 1],
+                            extend='neither')
             elif stabilisation_method == 'stipple':
                 plot_stippled_data(da_binary, ax)
             else:
-                raise ValueError(f'stabilisation_method must be one of [blackout, stipple]. Value entered {stabilisation_method}')
+                raise ValueError(
+                    f'stabilisation_method must be one of [blackout, stipple]. Value entered {stabilisation_method}')
         utils.change_logginglevel(logginglevel)
         # Optionally, if `stipling_da` is provided, overlay stipple data on the plot.
         # The details of the `plot_stippled_data` function are not provided here.
@@ -497,7 +496,8 @@ def map_plot_all_for_coords_3(da: xr.DataArray, levels: ArrayLike, dim: str=None
         axes[num].coastlines()
 
         # Set the title for the current subplot with the corresponding dimension value (`dv`).
-        if add_title: axes[num].set_title(f'{dv}{title_tag}', fontsize=plotting_functions.PlotConfig.title_size*font_scale)
+        if add_title: axes[num].set_title(f'{dv}{title_tag}',
+                                          fontsize=plotting_functions.PlotConfig.title_size*font_scale)
 
         # Optionally, add a figure label (e.g., "a)", "b)", etc.) to each subplot if `add_label` is True.
         if add_label: plotting_functions.add_figure_label(axes[num], f'{chr(97+num)})', font_scale=font_scale)
@@ -512,8 +512,9 @@ def map_plot_all_for_coords_3(da: xr.DataArray, levels: ArrayLike, dim: str=None
             else:
                 cax_to_use = plt.subplot(gs_to_use) if cax is None else cax[num]
             logger.debug(f' - colorbar: {levels_to_use=}')
-            cbar = plotting_functions.create_colorbar(c, cax=cax_to_use, levels=levels_to_use, extend=extend, orientation='horizontal',
-                            font_scale=font_scale, cbar_title=cbar_title)
+            cbar = plotting_functions.create_colorbar(c, cax=cax_to_use, levels=levels_to_use, extend=extend,
+                                                      orientation='horizontal',
+                            font_scale=font_scale*1.2, cbar_title=cbar_title)
             colobar_completed = True if matching_levels_for_all else False
             cbars.append(cbar)
 
@@ -521,9 +522,8 @@ def map_plot_all_for_coords_3(da: xr.DataArray, levels: ArrayLike, dim: str=None
     if return_all:
         to_return = (fig, gs, axes, cbars) if 'cbar' in locals() else (fig, gs, axes)
         return to_return
-import numpy as np
-import matplotlib.pyplot as plt
-import matplotlib.colors as mcolors
+
+
 
 def extract_partial_color_map(cmap, start:int, required_legnth, scaling:int):
 
