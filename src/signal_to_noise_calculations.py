@@ -605,6 +605,150 @@ def find_stability_index(arr: np.ndarray, window: int, fraction: float = 0.5) ->
     # Stability never achieved return arg + the offset
     return sel_start + int(window/2)
 
+def get_percent_non_nan(arr, window):
+    """
+    Calculates the percentage of non-NaN (finite) values within a moving window subset of the array.
+    
+    Parameters:
+    ----------
+    arr : numpy.ndarray
+        1D array in which to calculate the fraction of non-NaN values.
+    window : int
+        The size of the window used to create the subset of the array.
+        
+    Returns:
+    -------
+    numpy.ndarray
+        1D array of the same length as the input array, containing the fraction of non-NaN values 
+        within each moving window. The last `subset_legnth` elements are filled with NaN to maintain 
+        the same length as the input array.
+    """
+    # Calculate the length of the subset based on the window size
+    subset_legnth = np.min([int(window/2), 10])
+    
+    # Initialize an array to hold the fraction of non-NaN values for each subset
+    fraction_non_nan_arr = []
+    
+    # Iterate over the array with the defined window size
+    for t in range(len(arr) - subset_legnth):
+        # Extract the current subset of the array
+        arr_subset = arr[t:t + subset_legnth]
+        
+        # Count the number of non-NaN values in the subset
+        number_non_nan = np.sum(np.isfinite(arr_subset))
+        
+        # Calculate the fraction of non-NaN values
+        fraction_non_nan = number_non_nan / subset_legnth
+        
+        # Store the result
+        fraction_non_nan_arr.append(fraction_non_nan)
+    
+    # Pad the result with NaN values to match the length of the input array
+    fraction_non_nan_arr = np.concatenate([fraction_non_nan_arr,
+                                           np.tile(np.nan, subset_legnth)])
+    
+    return np.array(fraction_non_nan_arr)
+
+
+def get_last_arg_v2(arr):
+    """
+    Finds the last index where the array has a value of 1 and returns the 1-based index.
+    
+    Parameters:
+    ----------
+    arr : numpy.ndarray
+        1D array in which to find the last occurrence of the value 1.
+        
+    Returns:
+    -------
+    int
+        The 1-based index of the last occurrence of 1 in the array. 
+        Returns 1 if no such occurrence is found.
+    """
+    # Find all indices where the array equals 1
+    last_arg = np.argwhere(arr == 1)
+    
+    # Select the last index, or 0 if no 1s are found
+    last_arg = last_arg[-1][-1] if len(last_arg) > 0 else 0
+    
+    # Add 1 to the result to convert to a 1-based index
+    last_arg = last_arg + 1
+    
+    return last_arg
+
+
+def find_stable_year_unsable_window_sel(unstable_pattern_arr, unstable_fraction_arr, windows):
+    """
+    This function finds the first year in which all windows become stable. It checks when a pattern
+    becomes stable across different windows and returns the total year when stability is achieved.
+
+    Parameters:
+    ----------
+    unstable_pattern_arr : numpy.ndarray
+        2D array representing unstable patterns across different windows and years.
+    unstable_fraction_arr : numpy.ndarray
+        2D array representing the fraction of instability across different windows and years.
+        The shape should be the transpose of `unstable_pattern_arr`.
+
+    Returns:
+    -------
+    int
+        The first year in which all windows become stable.
+
+    Raises:
+    ------
+    AssertionError:
+        If the shape of `unstable_pattern_arr` does not match the reversed shape of `unstable_fraction_arr`.
+    """
+    
+    # Ensure that the shapes of the arrays are compatible
+    assert unstable_pattern_arr.shape == unstable_fraction_arr.shape[::-1]
+    
+    # Sum instability across years for each window
+    stable_num_arr = np.sum(unstable_fraction_arr, axis=1)
+
+    # Find the first year where all windows are stable (no instability)
+    first_year_all_stable = np.where(stable_num_arr == 0)[0][0]
+
+    # If the first year is stable from the start, return this year
+    if first_year_all_stable == 0:
+        return first_year_all_stable
+
+    # The year before the first fully stable year
+    stable_point_query_year = first_year_all_stable - 1
+
+    # Find windows that are unstable in the year before full stability
+    windows_that_are_unstable = unstable_fraction_arr[stable_point_query_year, :]
+
+    # Get indices of the unstable windows
+    window_unstable_args = np.where(windows_that_are_unstable == 1)[0]
+
+    larst_arg_list = []
+
+    for sarg in window_unstable_args:
+        # Select the window size for analysis
+        window = windows[sarg]
+
+        # Set the length of the selection window, max of 20 or the window size
+        lenght_of_selection = np.min([20, window])
+
+        # Select the analysis window: data from the unstable window at the query year onwards
+        # Ensure the dimension order is window first
+        anlsysis_window = unstable_pattern_arr[sarg, stable_point_query_year:stable_point_query_year + lenght_of_selection]
+
+        # Find the last stable index (where the data is finite) in the analysis window
+        last_arg = get_last_arg_v2(np.isfinite(anlsysis_window))
+        larst_arg_list.append(last_arg)
+
+    larst_arg_list = np.array(larst_arg_list)
+
+    # Calculate the maximum extension of stability required across the unstable windows
+    stable_year_addition = np.max(larst_arg_list)
+
+    # Calculate the total year when stability is achieved
+    total_year_stable = first_year_all_stable + stable_year_addition
+    
+    return total_year_stable
 
 
 #####!!!!!!!!!!!!!!
