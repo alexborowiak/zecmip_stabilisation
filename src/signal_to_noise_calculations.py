@@ -650,6 +650,51 @@ def get_percent_non_nan(arr, window):
     return np.array(fraction_non_nan_arr)
 
 
+def get_percent_non_zero(arr, window):
+    """
+    Calculates the percentage of non-NaN (finite) values within a moving window subset of the array.
+    
+    Parameters:
+    ----------
+    arr : numpy.ndarray
+        1D array in which to calculate the fraction of non-NaN values.
+    window : int
+        The size of the window used to create the subset of the array.
+        
+    Returns:
+    -------
+    numpy.ndarray
+        1D array of the same length as the input array, containing the fraction of non-NaN values 
+        within each moving window. The last `subset_legnth` elements are filled with NaN to maintain 
+        the same length as the input array.
+    """
+    # Calculate the length of the subset based on the window size
+    subset_legnth = np.min([int(window/2), 10])
+    
+    # Initialize an array to hold the fraction of non-NaN values for each subset
+    fraction_non_nan_arr = []
+    
+    # Iterate over the array with the defined window size
+    for t in range(len(arr) - subset_legnth):
+        # Extract the current subset of the array
+        arr_subset = arr[t:t + subset_legnth]
+        
+        # Count the number of non-NaN values in the subset
+        number_non_nan = np.sum(arr_subset)
+        
+        # Calculate the fraction of non-NaN values
+        fraction_non_nan = number_non_nan / subset_legnth
+        
+        # Store the result
+        fraction_non_nan_arr.append(fraction_non_nan)
+    
+    # Pad the result with NaN values to match the length of the input array
+    fraction_non_nan_arr = np.concatenate([fraction_non_nan_arr,
+                                           np.tile(np.nan, subset_legnth)])
+    
+    return np.array(fraction_non_nan_arr)
+
+
 def get_last_arg_v2(arr):
     """
     Finds the last index where the array has a value of 1 and returns the 1-based index.
@@ -698,7 +743,8 @@ def find_stable_year_unsable_window_sel(unstable_pattern_arr, unstable_fraction_
     Raises:
     ------
     AssertionError:
-        If the shape of `unstable_pattern_arr` does not match the reversed shape of `unstable_fraction_arr`.
+        If the shape of `unstable_pattern_arr` does not match the reversed shape of
+        `unstable_fraction_arr`.
     """
     
     # Ensure that the shapes of the arrays are compatible
