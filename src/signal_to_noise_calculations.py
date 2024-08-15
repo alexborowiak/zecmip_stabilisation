@@ -797,6 +797,273 @@ def find_stable_year_unsable_window_sel(unstable_pattern_arr, unstable_fraction_
     return total_year_stable
 
 
+
+
+# def frac_non_zero_window(time_window_arr, windows):
+#     """
+#     Calculate the percentage of non-NaN values within specified windows for each time series.
+
+#     Args:
+#         time_window_arr (np.ndarray): 2D array where each column represents a different time series.
+#         windows (list of int): List of window sizes to apply across the time series.
+
+#     Returns:
+#         np.ndarray: 2D array with the same shape as `time_window_arr` where each element represents 
+#                     the percentage of non-NaN values within the corresponding window.
+#     """
+#     # Initialize an array to store the percentage of non-NaN values with NaN placeholders.
+#     frac_non_zero_2d = []#np.full_like(time_window_arr, np.nan)
+
+#     # Iterate through each window size in the `windows` list.
+#     for num in range(len(windows)):
+#         window = windows[num]
+#         # Extract the time series data for the current window.
+#         time_arr = time_window_arr[:, num]
+
+#         sel_legth = 10#np.max([10, int(window/2)])
+#         number_non_zero = np.array([np.nansum(time_arr[t:t+sel_legth]) for t in range(len(time_arr)-sel_legth)])
+#         frac_non_zero = number_non_zero/sel_legth
+
+#         frac_non_zero = np.concatenate([frac_non_zero, np.tile(np.nan, sel_legth)])
+#         frac_non_zero_2d.append(frac_non_zero)
+
+#     return np.array(frac_non_zero_2d).transpose(-1, 0)
+
+def frac_non_zero_window(time_window_arr, windows):
+    """
+    Calculate the percentage of non-NaN values within specified windows for each time series.
+
+    Args:
+        time_window_arr (np.ndarray): 2D array where each column represents a different time series.
+        windows (list of int): List of window sizes to apply across the time series.
+
+    Returns:
+        np.ndarray: 2D array with the same shape as `time_window_arr` where each element represents 
+                    the percentage of non-NaN values within the corresponding window.
+    """
+    # Initialize an array to store the percentage of non-NaN values with NaN placeholders.
+    frac_non_zero_2d = []#np.full_like(time_window_arr, np.nan)
+
+    # Iterate through each window size in the `windows` list.
+    for num in range(len(windows)):
+        window = windows[num]
+        # Extract the time series data for the current window.
+        time_arr = time_window_arr[:, num]
+
+        sel_legth = 10#np.max([10, int(window/2)])
+        number_non_zero = np.array([np.nansum(time_arr[t:t+sel_legth]) for t in range(len(time_arr)-sel_legth)])
+        frac_non_zero = number_non_zero/sel_legth
+
+        frac_non_zero = np.concatenate([frac_non_zero, np.tile(np.nan, sel_legth)])
+        frac_non_zero_2d.append(frac_non_zero)
+
+    return np.array(frac_non_zero_2d).transpose(-1, 0)
+
+    
+def calcuate_year_stable_and_unstable(time_window_arr, windows, number_attempts: int = 7, max_val:int=50,
+                                     logginglevel='ERROR'):
+    """
+    Calculate the years of stability and instability in a time series.
+    
+    Parameters:
+    - time_window_arr (np.ndarray): A 2D array representing the time series data for different windows.
+    - windows (np.ndarray): An array containing the size of each window.
+    - number_attempts (int): The maximum number of iterations for searching stability/instability. Default is 5.
+    
+    Returns:
+    - year_list (np.ndarray): A cumulative sum array representing the years at which stability or instability is identified.
+      If the number of identified years is less than the number of attempts, the remaining positions in the array will be NaN.
+    """
+    # Convert the time series data to a binary array where 1 represents
+    # finite values and 0 represents NaNs or infinite values.
+    utils.change_logging_level(logginglevel)
+    time_window_arr = np.where(np.isfinite(time_window_arr), 1, 0)
+    
+    bump_start=0
+    next_year_list = []
+    for i in range(number_attempts):
+    
+        if i != 0:
+            # Check if the end of the time series has been reached.
+            if next_year_list[-1] >= time_window_arr.shape[0]: break
+    
+            # Cut the time series starting from the last identified year to the end.
+            # The instability last at least as long as the window the fraction is taken
+            # over
+            time_window_arr = time_window_arr[next_year_list[-1]:, :]
+    
+            # Break if the remaining time series is too short for further analysis.
+            if time_window_arr.shape[0] < 10:
+                break
+        if len(next_year_list)>2: # At lesat two entries
+            # There has only been least three years since the last change
+            if next_year_list[-1] <= 3: # Only three years since last condition
+                # Erase last two values - the are basically ontop
+                # e.g. the first condition didn't really occur
+                bump_start = np.sum(next_year_list[:-2])#next_year_list[-1]
+                next_year_list = next_year_list[:-2]
+            else: bump_start=0
+    
+        # Calculate the fraction of unstable points within each window.
+        frac_unstable_arr = frac_non_zero_window(time_window_arr, windows)
+    
+        if i % 2:  # Searching for instability
+            # print('Instability Search')
+    
+            # Set a threshold where instability is defined as the fraction of unstable points > 0.4.
+            instability_condition = frac_unstable_arr >= 0.5
+    
+            # Create a binary array where 1 indicates instability.
+            frac_unstable_threshold_arr = np.where(instability_condition, 1, 0)
+    
+            # If no instability is detected, break the loop.
+            if np.all(frac_unstable_threshold_arr == 0): break
+    
+            # Count the number of unstable points across all windows.
+            number_unstable_across_window = np.nansum(frac_unstable_threshold_arr, axis=1)
+    
+            # Find the first year where instability is detected.
+            first_year_condition_met = np.where(number_unstable_across_window > 0)[0][0]
+    
+            window_args = np.where(frac_unstable_threshold_arr[first_year_condition_met, :]==1)[0]
+    
+            first_arg_list = []
+            for sarg in window_args:
+                length_of_selection = 10#np.min([10, int(window)])
+                # Select the window size for analysis
+                window = windows[sarg]
+                anlsysis_window =\
+                    time_window_arr[first_year_condition_met:first_year_condition_met + length_of_selection, sarg]
+            
+                first_unstable_point = np.where(anlsysis_window==1)[0][0]
+                first_arg_list.append(first_unstable_point)
+            first_arg_list = np.array(first_arg_list)
+            year_addition = np.min(first_arg_list)
+    
+            year_val = first_year_condition_met+year_addition+1
+            # If the condition analysed is more than 45, break
+            if np.cumsum(next_year_list)[-1] > max_val-5: break
+    
+      
+        else:  # Searching for stability
+            # print('Stability Search')
+            if i == 0:
+                # First lets check if it is already ultra stable
+                frac_below_hard_threshold = np.where(frac_unstable_arr[:10, :] <= 0.25, 1, 0)
+
+            # IF all fraction are below 0.2, stabilise immediately
+            if np.all(frac_below_hard_threshold == 1) and i==0:
+                    year_val = 0
+            else:
+                # Set a threshold where stability is defined as the fraction of unstable points <= 0.2.
+                # Shape time x window  
+                frac_below_threshold = np.where(frac_unstable_arr < 0.5, 1, 0)
+        
+                # Count the number of unstable points across all windows.
+                # Shape time
+                number_windows_stable = np.nansum(frac_below_threshold, axis=1)
+                logger.debug(f'number_windows_stable:\n{number_windows_stable}')
+        
+                # If every window is stable
+                # Shape: time
+                stability_condition = number_windows_stable == len(windows)
+    
+                logger.debug(f'stability condition array\n{stability_condition}')
+                # print(stability_condition)
+                # If stability is not found, break the loop.
+                if np.all(stability_condition == False): break
+        
+                # Find the first year where stability is detected.
+                first_year_condition_met = np.where(stability_condition)[0][0]
+        
+                #Identify the year before the first fully stable year.
+                point_query_year = first_year_condition_met# - 1
+                # if point_query_year <0: point_query_year +=1
+                logger.info(f'{point_query_year}')
+        
+                # Extract values from the time series at the query year.
+                # val_at_query_windows = time_window_arr[point_query_year, :]
+                val_at_query_windows = frac_below_threshold[point_query_year, :]
+                logger.debug(f'Values at window {val_at_query_windows}')
+        
+                # Find the windows that are stable at the query year.
+                window_args = np.where(val_at_query_windows == 1)[0]
+                
+        
+                larst_arg_list = []
+                # print(window_args)
+                for sarg in window_args:
+                    # Get the window size for analysis.
+                    window = windows[sarg]
+        
+                    # Determine the length of the selection window, max of 10 or the window size.
+                    length_of_selection = 10#np.min([10, int(window)])
+        
+                    # print(window)
+                    # Select the analysis window starting from the query year.
+                    analysis_window = time_window_arr[point_query_year:point_query_year + length_of_selection, sarg]
+        
+                    # Find the last stable index in the analysis window.
+                    last_arg = get_last_arg_v2(analysis_window)
+                    larst_arg_list.append(last_arg)
+    
+                # Calculate the additional years needed for stability.
+                larst_arg_list = np.array(larst_arg_list)
+                year_addition = np.max(larst_arg_list)
+                year_val = first_year_condition_met + year_addition
+
+            
+    
+        # Append the calculated year to the list.
+        if bump_start:
+            # print(year_val, bump_start)
+            year_val=year_val + bump_start
+
+        # Append
+        if year_val == 1: year_val = 0
+        next_year_list.append(year_val)
+
+        # If the condition analysed is more than 45, break
+        if np.cumsum(next_year_list)[-1] > max_val-5: break
+
+
+    # Calculate the cumulative sum of the years to get the year list.
+    year_list = np.cumsum(next_year_list)
+
+
+    # End point conditions
+    # # If there are any values greater than 50, replace them with 50
+    if np.any(year_list>max_val):
+        year_list[np.where(year_list>max_val)] = max_val
+        
+    
+    # # If not even (e.g. 1, 3) then finishing on instability
+    # Need to assign unstable
+    if not len(year_list)%2 and len(year_list)>1: 
+        # Instability has been assigned at the last year
+        # So chop of the last point
+        if year_list[-1] == max_val:
+            year_list = year_list[:-1]
+        else:
+            year_list = np.concatenate([year_list,[max_val]])
+
+    # The model nevera actuyall stabilised, so assign 50
+    if len(year_list) == 0:
+        year_list = np.array([max_val])
+        
+    # Check how many 50s there are
+    number_of_max_vals = len(np.where(year_list==max_val)[0])
+    # IF there is more than one 50, remove
+    if number_of_max_vals > 1:
+        year_list = year_list[:-(number_of_max_vals-1)]
+
+    
+    # Ensure the year list has the same size as the number of attempts.
+    if len(year_list) < number_attempts:
+        year_list = np.concatenate([year_list, np.tile(np.nan, number_attempts - len(year_list))])
+    logger.info('\n')
+    return year_list
+
 #####!!!!!!!!!!!!!!
 ##### DO NOT DELETE
 ##### These are old algorithms to determine the stability of the climate. 
