@@ -120,6 +120,7 @@ def plot_all_coord_lines(da: xr.DataArray, coord='model', exp_type=None,
                          font_scale=1, consensus=True, xlabel=None, ylabel=None, yticks_right:list=None, labelpad=60,
                          bbox_to_anchor=(1.02,1), ncol=4, add_legend=True, xlim=None, ylim=None, title=None, 
                          increment:int=10, linestyle='-', colors:Union[str, Tuple, Dict]=None, logginglevel='ERROR',params=None,
+                         linewidth=2,
                         **kwargs):
     '''
     Plots all of the values in time for a coordinate. E.g. will plot all of the models values
@@ -155,13 +156,13 @@ def plot_all_coord_lines(da: xr.DataArray, coord='model', exp_type=None,
     for i, coord_value in enumerate(coord_values):
         logger.debug(f'{i=}, {coord_value=}')
 
-        linewidth = 2
+        # linewidth = 2
         zorder  = 100
         if exp_type or params:
             logger.info('Using custom params')
             c = params[coord_value]['color']
             ls =  params[coord_value].get('linestyle', '-')
-            linewidth = params[coord_value].get('linewidth', 3)
+            # linewidth = params[coord_value].get('linewidth', 3)
             if 'zorder' in params[coord_value]: zorder = params[coord_value]['zorder']
             logger.debug(f'   - {c=}, {ls=}')
         else:

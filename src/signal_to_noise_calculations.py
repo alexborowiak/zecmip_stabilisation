@@ -844,10 +844,22 @@ def calcuate_year_stable_and_unstable(time_window_arr, windows, number_attempts:
     Returns:
     - year_list (np.ndarray): A cumulative sum array representing the years at which stability or instability is identified.
       If the number of identified years is less than the number of attempts, the remaining positions in the array will be NaN.
+
+
+    Notes on window subtraction
+    - Looking for stability.
+        - THis should occur one after the last time there is a one
+
+    - Looking for instability
+        - This should occur the first time there is a 1
     """
     # Convert the time series data to a binary array where 1 represents
     # finite values and 0 represents NaNs or infinite values.
     utils.change_logging_level(logginglevel)
+    assert time_window_arr.shape[-1] == len(windows), (
+    f"Assertion failed: The last dimension of time_window_arr has length {time_window_arr.shape[-1]} "
+    f"but the nubmer of windows is {len(windows)}. The -1 dimensions shoudl be window. Data may need to be transpoed.")
+
 
     # This is not used functinoally, but used defensivly
     window_shape = time_window_arr.shape[-1]
@@ -864,15 +876,19 @@ def calcuate_year_stable_and_unstable(time_window_arr, windows, number_attempts:
     # time x window
     frac_unstable_arr = frac_non_zero_window(time_window_arr, windows)
 
-    # First 10 years
-    initial_fracs = frac_unstable_arr[:10, :]
+    # Using 5 years here, as if the very last of the 10 years has an unstable fraction
+    initial_fracs = frac_unstable_arr[:5, :]
+    logger.info(f' - inital_fracs (shape = {initial_fracs.shape})\n{initial_fracs}')
 
     if np.any(initial_fracs >= 0.5):
+        logger.info('Fracs above 0.5 found - test for stability')
         # If any of the fraction are greater than 0.5, then we are unstable 
         # and need to start looking for stability
         TEST_FOR_STABILITY = True
         TEST_FOR_INSTABILITY = False
     else:
+        logger.info('Fracs above 0.5 not found - test for instability')
+
         # Otherwise, we have started off with being stable
         # so start testing for instability
         TEST_FOR_STABILITY = False
@@ -897,7 +913,22 @@ def calcuate_year_stable_and_unstable(time_window_arr, windows, number_attempts:
             # are all in a row, the stable year and the unstalbe year,
             # then both become the same. Thus, putting the negative one 
             # here fixes this
-            time_window_arr = time_window_arr[next_year_list[-1]-1:, :]
+
+            # This selection condition results in values being too large.
+            if next_year_list[-1] == 0:
+                selection = 0
+                # number_required_for_sub = 3
+            else:
+                selection = next_year_list[-1]-1
+                # number_required_for_sub = 2
+            # if selection<0: selection = 0
+
+            # The first time we are doing this, we don't want to subtract as this
+            # has not occured year
+            if next_year_list[-1] > 0:# and TEST_FOR_INSTABILITY:  and len(next_year_list)>=2 # len(next_year_list) >= number_required_for_sub: 
+                next_year_list[-1] = next_year_list[-1]-1
+            # if selection > 1: selection = selection -1
+            time_window_arr = time_window_arr[selection:, :]
     
             # Break if the remaining time series is too short for further analysis.
             if time_window_arr.shape[0] < 10: break
@@ -914,7 +945,7 @@ def calcuate_year_stable_and_unstable(time_window_arr, windows, number_attempts:
         frac_unstable_arr = frac_non_zero_window(time_window_arr, windows)
     
         if TEST_FOR_INSTABILITY:  # Searching for instability
-            logger.info('Instability Search')
+            logger.info('\nInstability Search\n------\n')
     
             # Set a threshold where instability is defined as the fraction of unstable points > 0.4.
             instability_condition = frac_unstable_arr >= 0.5
@@ -936,20 +967,24 @@ def calcuate_year_stable_and_unstable(time_window_arr, windows, number_attempts:
     
             window_args = np.where(frac_unstable_threshold_arr[first_year_condition_met, :]==1)[0]
             logger.debug(f' - {window_args=}')
+            logger.info(f' - windows that are unstable\n{windows[window_args]}')
+
     
             first_arg_list = []
             for sarg in window_args:
                 length_of_selection = 10#np.min([10, int(window)])
                 # Select the window size for analysis
                 window = windows[sarg]
+                logger.debug(f' - {sarg=} {window}')
                 anlsysis_window =\
                     time_window_arr[first_year_condition_met:first_year_condition_met + length_of_selection, sarg]
-            
+
+                logger.debug(f' - anlsysis_window {anlsysis_window.shape}\n{anlsysis_window}')
                 first_unstable_point = np.where(anlsysis_window==1)[0][0]
                 first_arg_list.append(first_unstable_point)
             logger.debug(f' - first_arg_list\n{first_arg_list}')
             first_arg_list = np.array(first_arg_list)
-            year_addition = np.min(first_arg_list)
+            year_addition = np.nanmin(first_arg_list)
             logger.info(f' - {year_addition=}')
     
             year_val = first_year_condition_met+year_addition+1
@@ -965,44 +1000,124 @@ def calcuate_year_stable_and_unstable(time_window_arr, windows, number_attempts:
     
       
         elif TEST_FOR_STABILITY:  # Searching for stability
-            logger.info('Stability Search')
+            # logger.info('Stability Search')
+            
+            # frac_unstable_threshold = np.where(frac_unstable_arr >= 0.5, 1, 0)
+    
+            # # Count the number of unstable points across all windows.
+            # # Shape time
+            # number_windows_unstable = np.nansum(frac_below_threshold, axis=1)
+            # logger.debug(f'number_windows_stable:\n{number_windows_unstable}')
+    
+            # # If every window is stable
+            # # Shape: time
+            # years_where_all_stable = number_windows_stable == 0
 
+            # logger.debug(f'  - The years where all are stable\n{years_where_all_stable}')
+            # # print(stability_condition)
+            # # Every single value is stalbe. Just return the remaining time left
+            # if np.all(years_where_all_stable == True): 
+            #     last_arg = time_window_arr.shape[0]
+            #     break
+    
+            # # Find the first year where stability is detected.
+            # last_year_with_instabilities = np.where(years_where_all_stable)[0][0]
+    
+            # #Identify the year before the first fully stable year.
+            # point_query_year = first_year_condition_met - 1
+            # logger.info(f' - {point_query_year=}')
+            # if point_query_year < 0:
+            #     point_query_year = 0
+            #     logger.info(f'{point_query_year}')
+    
+            # # Extract values from the time series at the query year.
+            # # val_at_query_windows = time_window_arr[point_query_year, :]
+            # val_at_query_windows = frac_below_threshold[point_query_year, :]
+            # logger.debug(f'Values at window {val_at_query_windows}')
+    
+            # # Find the windows that are stable at the query year.
+            # # This shoudl be == 0, as we are looking for when they 
+            # # are not stable (e.g unstable)
+            # window_args = np.where(val_at_query_windows == 0)[0]
+            # logger.info(f' - windows that are unstable\n{windows[window_args]}')
+            # logger.debug(f' - window_args\n{window_args}')
+            
+    
+            # larst_arg_list = []
+            # # print(window_args)
+            # for sarg in window_args:
+            #     # Get the window size for analysis.
+            #     window = windows[sarg]
+    
+            #     # Determine the length of the selection window, max of 10 or the window size.
+            #     length_of_selection = 10#np.min([10, int(window)])
+    
+            #     # print(window)
+            #     # Select the analysis window starting from the query year.
+            #     analysis_window = time_window_arr[point_query_year:point_query_year + length_of_selection, sarg]
+    
+            #     # Find the last stable index in the analysis window.
+            #     last_arg = get_last_arg_v2(analysis_window)
+            #     larst_arg_list.append(last_arg)
+
+            # # Calculate the additional years needed for stability.
+            # larst_arg_list = np.array(larst_arg_list)
+            # year_addition = np.max(larst_arg_list)
+
+            logger.info('\nStability Search\n----------\n')
             # Set a threshold where stability is defined as the fraction of unstable points <= 0.2.
             # Shape time x window  
-            frac_below_threshold = np.where(frac_unstable_arr < 0.5, 1, 0)
+            frac_stable_time_window = np.where(frac_unstable_arr < 0.5, 1, 0)
     
             # Count the number of unstable points across all windows.
             # Shape time
-            number_windows_stable = np.nansum(frac_below_threshold, axis=1)
+            number_windows_stable = np.nansum(frac_stable_time_window, axis=1)
             logger.debug(f'number_windows_stable:\n{number_windows_stable}')
     
             # If every window is stable
             # Shape: time
-            stability_condition = number_windows_stable == len(windows)
+            where_all_windows_stable = number_windows_stable == len(windows)
+            logger.debug(f'The locations where all windows are stable \n{where_all_windows_stable}')
 
-            logger.debug(f'stability condition array\n{stability_condition}')
-            # print(stability_condition)
+    
+            # if i == 0:
+                # During the first instance of this, there is a special conditino
+                # This results by the stability occuring immediately at the start
+                # followed by instabiliyt.
+                # This results in the stability occuring early
+                # Therefore we only want to start searching for stability
+                # once the initial instability has occured
+            if i == 0:
+                first_unstable_location = np.where(where_all_windows_stable==0)[0][0]
+                logger.info(f'  - first_unstable_location\n{first_unstable_location}')
+    
+                where_all_windows_stable = where_all_windows_stable[first_unstable_location:]
+                frac_stable_time_window = frac_stable_time_window[first_unstable_location:]
+                time_window_arr = time_window_arr[first_unstable_location:]
+
+            # print(where_all_windows_stable)
             # If stability is not found, break the loop.
-            if np.all(stability_condition == False): break
+            if np.all(where_all_windows_stable == False): break
     
             # Find the first year where stability is detected.
-            first_year_condition_met = np.where(stability_condition)[0][0]
+            first_year_condition_met = np.where(where_all_windows_stable)[0][0]
     
             #Identify the year before the first fully stable year.
             point_query_year = first_year_condition_met - 1
             logger.info(f' - {point_query_year=}')
-            if point_query_year <0: point_query_year ==0
-            # logger.info(f'{point_query_year}')
+            assert point_query_year >= 0 , ('The point query year is less than 0')
+
     
             # Extract values from the time series at the query year.
             # val_at_query_windows = time_window_arr[point_query_year, :]
-            val_at_query_windows = frac_below_threshold[point_query_year, :]
+            val_at_query_windows = frac_stable_time_window[point_query_year, :]
             logger.debug(f'Values at window {val_at_query_windows}')
     
             # Find the windows that are stable at the query year.
             # This shoudl be == 0, as we are looking for when they 
             # are not stable (e.g unstable)
             window_args = np.where(val_at_query_windows == 0)[0]
+            logger.info(f' - windows that are unstable\n{windows[window_args]}')
             logger.debug(f' - window_args\n{window_args}')
             
     
@@ -1026,7 +1141,9 @@ def calcuate_year_stable_and_unstable(time_window_arr, windows, number_attempts:
             # Calculate the additional years needed for stability.
             larst_arg_list = np.array(larst_arg_list)
             year_addition = np.max(larst_arg_list)
-            year_val = first_year_condition_met + year_addition
+            year_val = first_year_condition_met + year_addition + 1
+            if i == 0:
+                year_val = year_val + first_unstable_location
 
             # Year of stabilisation found, start looking for other
             TEST_FOR_STABILITY = False
@@ -1038,6 +1155,7 @@ def calcuate_year_stable_and_unstable(time_window_arr, windows, number_attempts:
     
         # Append the calculated year to the list.
         if bump_start:
+            logger.debug(f' - {bump_start=}')
             year_val=year_val + bump_start
             # remove the bump start after it has been used
             bump_start = 0
@@ -1047,19 +1165,41 @@ def calcuate_year_stable_and_unstable(time_window_arr, windows, number_attempts:
         next_year_list.append(year_val)
 
         logger.info(f' - next_year_list\n{next_year_list}')
+        logger.info(f'- Currunt cumsum\n{np.cumsum(next_year_list)}')
         # If the condition analysed is more than 45, break
         if np.cumsum(next_year_list)[-1] > max_val-5: break
         logger.info('Complete\n')
 
 
+    logger.info(f'\n - Search complete - final processing')
     # Calculate the cumulative sum of the years to get the year list.
+    logger.info(f' = nex_year_list final form\n{next_year_list}')
     year_list = np.cumsum(next_year_list)
+    logger.info(f' = year_list (cumsum applied )\n{year_list}')
+
+    # Due to the need to select one year before the year of change
+    # this introduced small errors that accumulate
+    # position 1 will be too large by one year
+    # position 2 will be too large by 2 years
+    # etc.
+    if len(year_list) > 1:
+        for num in range(len(year_list)):
+            if num%2:
+                year_list[num] = year_list[num]+1 #- num
 
 
     # End point conditions
     # # If there are any values greater than 50, replace them with 50
-    if np.any(year_list>max_val):
-        year_list[np.where(year_list>max_val)] = max_val
+    if np.any(year_list>(max_val)):
+        year_list[np.where(year_list>(max_val))] = max_val
+        logger.debug(f'Value greater than max ({max_val=}) found and removed \n{year_list}')
+
+    # IF the last is an unstable, but it has become unstalbe just beofre the end
+    # then get rid of
+    # if len(year_list)%2 and len(year_list)>1:
+    #     if year_list[-1] > max_val-3:
+    #         # Thus, remove the last value
+    #         year_list = year_list[:-1]
         
     
     # # If not even (e.g. 1, 3) then finishing on instability
@@ -1067,7 +1207,7 @@ def calcuate_year_stable_and_unstable(time_window_arr, windows, number_attempts:
     if not len(year_list)%2 and len(year_list)>1: 
         # Instability has been assigned at the last year
         # So chop of the last point
-        if year_list[-1] == max_val:
+        if year_list[-1] > max_val-3:
             year_list = year_list[:-1]
         else:
             year_list = np.concatenate([year_list,[max_val]])
