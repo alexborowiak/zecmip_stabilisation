@@ -721,17 +721,20 @@ def plot_stabilization(data_coords, model_name, anom_data, stability_data, year_
     sm_ds, sm_patt, year_stable_vals, value_mean_list, start_end_tuple_list = process_stability_data(
         data_coords, model_name, anom_data, stability_data, year_stability_data
     )
+
+    sn_cmap, sn_levels = generte_sn_cmap_and_levels(1/3)
+    sn_cmap = 'RdBu_r'
     
     # Calculate mean values and start-end year tuples
     value_mean_list, start_end_tuple_list = calculate_mean_values(year_stable_vals, sm_ds.values)
     
     fig = plt.figure(figsize=(9, 6))
-    gs = gridspec.GridSpec(2, 1, height_ratios=[1, 0.5], hspace=0)
-    ax1 = fig.add_subplot(gs[0])
-    ax2 = fig.add_subplot(gs[1])
+    gs = gridspec.GridSpec(4, 1, height_ratios=[0.1, 0.15, 1, 0.5], hspace=0)
+    ax1 = fig.add_subplot(gs[2])
+    ax2 = fig.add_subplot(gs[3])
 
     # Plot the stability pattern on the first subplot
-    sm_patt.plot(y='window', ax=ax1, alpha=0.8, add_colorbar=False)
+    c1 = sm_patt.plot(y='window', ax=ax1, alpha=0.8, levels=sn_levels, cmap=sn_cmap, add_colorbar=False, extend='both')
 
     # Add vertical lines for each stable year in both subplots
     for year in year_stable_vals:
@@ -778,5 +781,11 @@ def plot_stabilization(data_coords, model_name, anom_data, stability_data, year_
 
     # Set the title for the first subplot, including model name and coordinates
     ax1.set_title(f'{model_name} - ({dict_to_title(data_coords)})')
+
+
+    cax=fig.add_subplot(gs[0])
+
+    cbar = plt.colorbar(c1, cax=cax, orientation='horizontal')
+    # cbar.set_title('S/N Ratio')
 
     return fig, ax1, ax2
