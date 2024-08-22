@@ -7,17 +7,19 @@ from typing import Dict, List, Union, Optional, Callable, Tuple
 import numpy as np
 import xarray as xr
 import cftime
+
+
 import matplotlib.pyplot as plt
 import matplotlib as mpl
-import matplotlib.gridspec as gridspec
 import matplotlib.colors as mcolors
+import matplotlib.gridspec as gridspec
 from matplotlib.patches import Rectangle
 from matplotlib import ticker as mticker
 import cartopy.crs as ccrs
 from cartopy.mpl.gridliner import LONGITUDE_FORMATTER, LATITUDE_FORMATTER
+
+
 ArrayLike = List[float]
-
-
 
 # Local imports (if applicable)
 import utils
@@ -87,6 +89,16 @@ plot_kwargs = dict(height=12, width=22, hspace=0.3, #vmin=-8, vmax=8, step=2,
                    axes_title='', 
                    title='', label_size=12, extend='both', xlowerlim=None, xupperlim=None,  filter_max=True,)
 
+
+colors = [(0, 0, 0, 0), (0.5, 0.5, 0.5, 0.5)]  # (R, G, B, Alpha)
+cmap_binary = mcolors.LinearSegmentedColormap.from_list("binary_no_color", colors)
+def grey_mask(ax, da):
+    da.plot(ax=ax, cmap=cmap_binary, add_colorbar=False)
+
+def dict_to_title(d):
+    lat_direction = 'N' if d['lat'] >= 0 else 'S'
+    lon_direction = 'E' if d['lon'] >= 0 else 'W'
+    return f"{abs(d['lat'])}°{lat_direction}, {abs(d['lon'])}°{lon_direction}"
 
 def format_ticks_as_years(ax, xvalues, major_base:int=10, minor_base:int=5, logginglevel='ERROR'):
 
@@ -605,3 +617,166 @@ def plot_average_stable_year(ds1, ds2, fig=None, ax=None, font_scale:float=1,
     ax.set_title('')
     
     return fig, ax
+
+
+    
+def calculate_mean_values(years, values):
+    """
+    Calculate mean values for each stabilization period and store start-end year tuples.
+
+    Parameters:
+    - years: np.ndarray, Array of year values.
+    - values: np.ndarray, Array of corresponding values.
+
+    Returns:
+    - value_mean_list: list of float, Mean values for each stabilization period.
+    - start_end_tuple_list: list of tuples, Each tuple contains the start and end years for a stabilization period.
+    """
+    years = years[np.isfinite(years)]
+    value_mean_list = []
+    start_end_tuple_list = []
+    
+    # Iterate through each year
+    for i in range(len(years)):
+        # Check if the index corresponds to a stabilization year (0, 2, 4, ...)
+        if 1 - i % 2:  # True for even indices
+            
+            # Define the start year of the stabilization period
+            start = years[i]
+            
+            # Define the end year, which is either 20 years after the start or the beginning of the next period
+            if i < len(years) - 1:
+                end = start + np.nanmin([20, years[i+1] - start])
+            else:
+                end = start + 20
+
+            start = int(start)
+            end = int(end)
+
+            # Select the values corresponding to the stabilization period
+            value_selection = values[start:end]
+            
+            # Calculate the mean of the selected values and add it to the list
+            value_mean = np.mean(value_selection)
+
+            start_end_tuple_list.append((start, end))
+            value_mean_list.append(value_mean)
+
+    return value_mean_list, start_end_tuple_list
+
+
+def process_stability_data(data_coords, model_name, anom_data, stability_data, year_stability_data):
+    """
+    Processes stability-related data for a given model and coordinates.
+
+    Parameters:
+    - data_coords: dict, Coordinates for latitude and longitude.
+    - model_name: str, The name of the climate model.
+    - anom_data: xarray.Dataset, The dataset containing temperature anomaly data.
+    - stability_data: xarray.Dataset, The dataset containing stability pattern data.
+    - year_stability_data: xarray.Dataset, The dataset containing year stability data.
+
+    Returns:
+    - sm_ds: xarray.DataArray, The temperature anomaly data for the selected model and coordinates.
+    - sm_patt: xarray.DataArray, The stability pattern data for the selected model and coordinates.
+    - year_stable_vals: np.ndarray, The stable year values, filtered for finite values.
+    - t1_val: float, The mean temperature anomaly before the first stable year.
+    - t2_val: float, The mean temperature anomaly after the second stable year.
+    """
+    # Extract temperature anomaly data based on coordinates and model
+    sm_ds = anom_data[model_name].sel(**data_coords).squeeze()
+
+    # Extract stability pattern data based on coordinates and model
+    sm_patt = stability_data[model_name].sel(**data_coords)
+    sm_patt['time'] = sm_patt.time.dt.year.values
+
+    # Extract and filter stable year values, converting to integer
+    year_stable_vals = year_stability_data[model_name].sel(**data_coords).squeeze().values
+    year_stable_vals = year_stable_vals[np.isfinite(year_stable_vals)].astype(int)
+
+    # Calculate mean temperature anomalies for specific periods before and after stability
+    # t1_val = sm_ds.isel(time=slice(year_stable_vals[1] - 20, year_stable_vals[1])).mean(dim='time').values.round(2).item()
+    # t2_val = sm_ds.isel(time=slice(year_stable_vals[2], year_stable_vals[2] + 20)).mean(dim='time').values.round(2).item()
+    value_mean_list, start_end_tuple_list = calculate_mean_values(year_stable_vals, sm_ds.values)
+
+    return sm_ds, sm_patt, year_stable_vals, value_mean_list, start_end_tuple_list
+
+def plot_stabilization(data_coords, model_name, anom_data, stability_data, year_stability_data):
+    """
+    Plots the stabilization and temperature anomaly data for a given model and coordinates.
+
+    Parameters:
+    - data_coords: dict, Coordinates for latitude and longitude.
+    - model_name: str, The name of the climate model.
+    - anom_data: xarray.Dataset, The dataset containing temperature anomaly data.
+    - stability_data: xarray.Dataset, The dataset containing stability pattern data.
+    - year_stability_data: xarray.Dataset, The dataset containing year stability data.
+
+    Returns:
+    - fig: matplotlib.figure.Figure, The figure object containing the plots.
+    - ax1: matplotlib.axes.Axes, The axes object for the first subplot.
+    - ax2: matplotlib.axes.Axes, The axes object for the second subplot.
+    """
+    # Process stability data to get relevant datasets and values
+    sm_ds, sm_patt, year_stable_vals, value_mean_list, start_end_tuple_list = process_stability_data(
+        data_coords, model_name, anom_data, stability_data, year_stability_data
+    )
+    
+    # Calculate mean values and start-end year tuples
+    value_mean_list, start_end_tuple_list = calculate_mean_values(year_stable_vals, sm_ds.values)
+    
+    fig = plt.figure(figsize=(9, 6))
+    gs = gridspec.GridSpec(2, 1, height_ratios=[1, 0.5], hspace=0)
+    ax1 = fig.add_subplot(gs[0])
+    ax2 = fig.add_subplot(gs[1])
+
+    # Plot the stability pattern on the first subplot
+    sm_patt.plot(y='window', ax=ax1, alpha=0.8, add_colorbar=False)
+
+    # Add vertical lines for each stable year in both subplots
+    for year in year_stable_vals:
+        ax1.axvline(year, color='green')
+        ax2.axvline(year, color='green')
+
+    # Plot the GMST anomaly and its 20-year rolling mean on the second subplot
+    ax2.plot(sm_ds.time.dt.year.values, sm_ds.values)
+    ax2.plot(sm_ds.time.dt.year.values, sm_ds.rolling(time=20, center=True).mean().values, color='green', linewidth=3)
+
+    # Add lines for temperature anomalies based on the new value lists
+    counter = 0
+    for (start, end), value_mean in zip(start_end_tuple_list, value_mean_list):
+        ax2.plot([start, end], [value_mean, value_mean], color='magenta')
+        if counter > 0:
+            diff = value_mean_list[counter] - value_mean_list[counter-1]
+            
+            # yval = value_mean * 1.25 if value_mean >0 else value_mean*0.75
+            yval = ax2.get_ylim()[0] * 1.25 if ax2.get_ylim()[0] >0 else ax2.get_ylim()[0]*0.75
+            # ax2.annotate(f'{diff:.1f}' + r'$^\circ$C', xy=(start+int((end-start)/2)+1,yval) , size=12, color='magenta',
+            #             ha='center', va='center')
+            sign = '+' if diff > 0 else '-'
+            ax2.annotate(f'{sign}{diff:.1f}' + r'$^\circ$C', xy=(start+int((end-start)/2)+1,yval) , size=12, color='magenta',
+                        ha='center', va='center')
+        counter += 1
+
+    # Set up the x-axis of the first subplot, moving labels to the top
+    ax1.xaxis.set_label_position('top')
+    ax1.xaxis.tick_top()
+
+    # Apply common settings to both subplots, like limits and grid
+    for ax in [ax1, ax2]:
+        ax.set_xlim(-1, 80)
+        ax.grid(True, linestyle='--', alpha=0.6, color='grey')
+
+    # Add a grey shaded region to the first subplot
+    ax1.axvspan(50, 80, color='grey')
+
+    # Label the axes of both subplots
+    ax1.set_xlabel('')
+    ax2.set_xlabel('Time After Emission Cessation (Years)')
+    ax1.set_ylabel('Window\nLength\n(Years)')
+    ax2.set_ylabel('GMST\nAnomaly' + r'($^\circ C$)')
+
+    # Set the title for the first subplot, including model name and coordinates
+    ax1.set_title(f'{model_name} - ({dict_to_title(data_coords)})')
+
+    return fig, ax1, ax2
