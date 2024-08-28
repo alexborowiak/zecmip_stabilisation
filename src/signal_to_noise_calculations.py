@@ -114,7 +114,7 @@ def rolling_signal(
     data: xr.DataArray, 
     window: int, 
     min_periods: int = 0, 
-    center: bool = True, 
+    start_align:bool = True, 
     method: str = 'gradient', 
     logginglevel: str = 'ERROR'
 ) -> xr.DataArray:
@@ -125,7 +125,7 @@ def rolling_signal(
     - data (xr.DataArray): Input dataset.
     - window (int, optional): Rolling window size. Defaults to 20.
     - min_periods (int, optional): Minimum number of periods. Defaults to 0.
-    - center (bool, optional): Whether to center the rolling window. Defaults to True.
+    - start_align (bool): Wether the value is assigned to the start or the middle. Defauls to True
     - method (str, optional): Calculation method. Defaults to 'gradient'.
     - logginglevel (str, optional): Logging level. Defaults to 'ERROR'.
 
@@ -135,8 +135,8 @@ def rolling_signal(
     utils.change_logging_level(logginglevel)
     logger.info(f"Calculating the rolling signal with method {method}")
 
-    if min_periods == 0:
-        min_periods = window
+    if min_periods == 0: min_periods = window
+    elif min_periods == 'half': min_periods = int(window/2)
 
     logger.debug(f"{window=}, {min_periods=}\ndata=\n{data}")
 
@@ -147,15 +147,17 @@ def rolling_signal(
     # Denominator can actually always be the same
     denominator = np.mean(xs) ** 2 - np.mean(xs ** 2)
     signal_da = (data
-                 .rolling(time=window, min_periods=min_periods, center=center)
+                 .rolling(time=window, min_periods=min_periods, center=True)
                  .reduce(grid_gradient, xs=xs, mean_xs=mean_xs, denominator=denominator
                         )) 
     # Multiply by window length to get signal from gradient
-    signal_da = signal_da* window
-    if center:
+    signal_da = signal_da * window
+
+
+    if start_align == True:
         signal_da = adjust_time_from_rolling(signal_da, window, logginglevel)
-    else:
-        signal_da = signal_da.dropna(dim='time')
+    # else:
+    #     signal_da = signal_da.dropna(dim='time')
 
 
     signal_da.name = 'signal'
@@ -163,24 +165,29 @@ def rolling_signal(
     return signal_da
 
 
-def rolling_noise(data, window:int, min_periods = 0,center=True,logginglevel='ERROR') -> xr.DataArray:
+def rolling_noise(data, window:int, min_periods=0, start_align:bool=True,logginglevel='ERROR') -> xr.DataArray:
+    '''
+    - start_align (bool): Wether the value is assigned to the start or the middle. Defauls to True
+    '''
     
     utils.change_logging_level(logginglevel)
 
     logger.info("Calculting the rolling noise")
 
     
-    # If no min_periods, then min_periods is just roll_period.
-    if ~min_periods:min_periods = window
+    if min_periods == 0: min_periods = window
+    elif min_periods == 'half': min_periods = int(window/2)
     
     # Rolling standard deviation
     noise_da = \
        data.rolling(time = window, min_periods = min_periods, center = True).std()
 
-    if center == True:
+    if start_align == True:
         noise_da = adjust_time_from_rolling(noise_da, window=window, logginglevel=logginglevel)
-    else:
-        noise_da = noise_da.dropna(dim='time')
+    # if center == True:
+    #     noise_da = adjust_time_from_rolling(noise_da, window=window, logginglevel=logginglevel)
+    # else:
+    #     noise_da = noise_da.dropna(dim='time')
     
     noise_da.name = 'noise'
     
@@ -189,7 +196,7 @@ def rolling_noise(data, window:int, min_periods = 0,center=True,logginglevel='ER
     return noise_da
 
 
-def static_noise(data, logginglevel='ERROR') -> xr.DataArray:
+def static_noise(data, logginglevel='ERROR', *args, **kwargs) -> xr.DataArray:
     
     utils.change_logging_level(logginglevel)
 
@@ -206,9 +213,12 @@ def signal_to_noise_ratio(
     ds: xr.Dataset, 
     window:int,
     detrended_data: xr.Dataset = None, 
+    start_align:bool=True,
     noise_type = 'rolling',
     return_all: bool = False,
     logginglevel='ERROR',
+    *args,
+    **kwargs
 ) -> xr.Dataset:
     """
     Calculate the signal-to-noise ratio for a given dataset.
@@ -225,17 +235,18 @@ def signal_to_noise_ratio(
     """
     # Calculate the rolling signal
     utils.change_logginglevel(logginglevel)
-    signal_ds = rolling_signal(ds, window, logginglevel=logginglevel)  
+    signal_ds = rolling_signal(ds, window, start_align=start_align, logginglevel=logginglevel, *args, **kwargs)  
     # Use the rolling_signal function to calculate the signal
 
     # Calculate the rolling noise
     # If detrended data is provided, use it; otherwise, use the original dataset
     if noise_type == 'rolling':
         noise_func = rolling_noise
+        noise_func = partial(noise_func, start_align=start_align)
         noise_func = partial(noise_func, window=window)
     elif noise_type == 'static': noise_func = static_noise
     logger.info(f'{noise_type=}')
-    noise_ds = noise_func(ds if detrended_data is None else detrended_data, logginglevel=logginglevel)  
+    noise_ds = noise_func(ds if detrended_data is None else detrended_data, logginglevel=logginglevel, *args, **kwargs)  
     logger.debug(noise_ds)
     # Calculate the signal-to-noise ratio
     sn_ratio_ds = signal_ds / noise_ds  # Divide the signal by the noise to get the ratio
@@ -433,7 +444,7 @@ def multi_window_func_with_model_split(
 
 def signal_to_noise_ratio_multi_window(
     ds, 
-    windows: ArrayLike, 
+    windows: ArrayLike,
     parallel=False,
     **kwargs
 ) -> xr.Dataset:
@@ -831,8 +842,8 @@ def frac_non_zero_window(time_window_arr, windows):
     return np.array(frac_non_zero_2d).transpose(-1, 0)
 
     
-def calcuate_year_stable_and_unstable(time_window_arr, windows, number_attempts: int = 7, max_val:int=50,
-                                     logginglevel='ERROR'):
+def calcuate_year_stable_and_unstable(time_window_arr, windows, number_attempts: int = 7, 
+                                      max_val:int=50, logginglevel='ERROR'):
     """
     Calculate the years of stability and instability in a time series.
     
@@ -877,7 +888,7 @@ def calcuate_year_stable_and_unstable(time_window_arr, windows, number_attempts:
     frac_unstable_arr = frac_non_zero_window(time_window_arr, windows)
 
     # Using 5 years here, as if the very last of the 10 years has an unstable fraction
-    initial_fracs = frac_unstable_arr[:5, :]
+    initial_fracs = frac_unstable_arr[:8, :]
     logger.info(f' - inital_fracs (shape = {initial_fracs.shape})\n{initial_fracs}')
 
     if np.any(initial_fracs >= 0.5):
@@ -915,11 +926,9 @@ def calcuate_year_stable_and_unstable(time_window_arr, windows, number_attempts:
             # here fixes this
 
             # This selection condition results in values being too large.
-            if next_year_list[-1] == 0:
-                selection = 0
+            if next_year_list[-1] == 0: selection = 0
                 # number_required_for_sub = 3
-            else:
-                selection = next_year_list[-1]-1
+            else: selection = next_year_list[-1]-1
                 # number_required_for_sub = 2
             # if selection<0: selection = 0
 
@@ -1000,70 +1009,6 @@ def calcuate_year_stable_and_unstable(time_window_arr, windows, number_attempts:
     
       
         elif TEST_FOR_STABILITY:  # Searching for stability
-            # logger.info('Stability Search')
-            
-            # frac_unstable_threshold = np.where(frac_unstable_arr >= 0.5, 1, 0)
-    
-            # # Count the number of unstable points across all windows.
-            # # Shape time
-            # number_windows_unstable = np.nansum(frac_below_threshold, axis=1)
-            # logger.debug(f'number_windows_stable:\n{number_windows_unstable}')
-    
-            # # If every window is stable
-            # # Shape: time
-            # years_where_all_stable = number_windows_stable == 0
-
-            # logger.debug(f'  - The years where all are stable\n{years_where_all_stable}')
-            # # print(stability_condition)
-            # # Every single value is stalbe. Just return the remaining time left
-            # if np.all(years_where_all_stable == True): 
-            #     last_arg = time_window_arr.shape[0]
-            #     break
-    
-            # # Find the first year where stability is detected.
-            # last_year_with_instabilities = np.where(years_where_all_stable)[0][0]
-    
-            # #Identify the year before the first fully stable year.
-            # point_query_year = first_year_condition_met - 1
-            # logger.info(f' - {point_query_year=}')
-            # if point_query_year < 0:
-            #     point_query_year = 0
-            #     logger.info(f'{point_query_year}')
-    
-            # # Extract values from the time series at the query year.
-            # # val_at_query_windows = time_window_arr[point_query_year, :]
-            # val_at_query_windows = frac_below_threshold[point_query_year, :]
-            # logger.debug(f'Values at window {val_at_query_windows}')
-    
-            # # Find the windows that are stable at the query year.
-            # # This shoudl be == 0, as we are looking for when they 
-            # # are not stable (e.g unstable)
-            # window_args = np.where(val_at_query_windows == 0)[0]
-            # logger.info(f' - windows that are unstable\n{windows[window_args]}')
-            # logger.debug(f' - window_args\n{window_args}')
-            
-    
-            # larst_arg_list = []
-            # # print(window_args)
-            # for sarg in window_args:
-            #     # Get the window size for analysis.
-            #     window = windows[sarg]
-    
-            #     # Determine the length of the selection window, max of 10 or the window size.
-            #     length_of_selection = 10#np.min([10, int(window)])
-    
-            #     # print(window)
-            #     # Select the analysis window starting from the query year.
-            #     analysis_window = time_window_arr[point_query_year:point_query_year + length_of_selection, sarg]
-    
-            #     # Find the last stable index in the analysis window.
-            #     last_arg = get_last_arg_v2(analysis_window)
-            #     larst_arg_list.append(last_arg)
-
-            # # Calculate the additional years needed for stability.
-            # larst_arg_list = np.array(larst_arg_list)
-            # year_addition = np.max(larst_arg_list)
-
             logger.info('\nStability Search\n----------\n')
             # Set a threshold where stability is defined as the fraction of unstable points <= 0.2.
             # Shape time x window  
@@ -1235,6 +1180,100 @@ def calcuate_year_stable_and_unstable(time_window_arr, windows, number_attempts:
 
     return year_list
 
+
+
+
+def generate_covered_amount_dict():
+    """
+    Generate a dictionary mapping window sizes to the number of initial points to cover.
+
+    This function calculates the number of initial years (points) that should be set 
+    to NaN (covered) for various window lengths. Windows shorter than 10 years 
+    are removed (i.e., no years are covered for such windows).
+    Anything that has a half window lenght shorter than 10 year shoudl be deleted.
+    The 10-year window at year 5, will have a complete winodw lenth
+    19: 1;
+    18: 1 (at the year 1, the centered window will have 9 on either side  - this 10 in)
+    17 - 2 (at the year 2, the center window will have 10 points inside)
+    16 - 2 (at the year 2, the centered window will have have 8 either side - thus 10 in )
+    Returns:
+        dict: A dictionary where keys are window lengths (10 to 19) and values 
+        are the number of initial years to cover.
+    """
+    cover_amount_dict = {}
+    # Define the range of window sizes from 19 down to 10
+    start_issue_windows = np.arange(19, 9, -1)
+    for window in start_issue_windows:
+        # Calculate the number of initial points to cover for each window
+        cover_amount = int(np.ceil((20 - window) / 2)) + 1
+        cover_amount_dict[window] = cover_amount
+    return cover_amount_dict
+
+
+cover_amount_dict = generate_covered_amount_dict()
+
+def remove_bad_start_values_andrew_version(arr, window, logginglevel='ERROR'):
+    """
+    Remove initial values from an array based on the window size.
+
+    This function sets the initial values of an array to NaN based on a specified 
+    window size. The number of initial values set to NaN is half the window size, 
+    rounded up.
+
+    Args:
+        arr (np.ndarray): The input array from which initial values will be removed.
+        window (int): The window size used to determine the number of initial values to remove.
+
+    Returns:
+        np.ndarray: The modified array with initial values set to NaN.
+    """
+
+    utils.change_logginglevel(logginglevel)
+    arr2 = arr.copy()
+    # Calculate the number of initial points to cover (set to NaN)
+    cover_amount = int(np.ceil(window / 2)) - 1
+    logger.info(f'{cover_amount=}')
+    arr2[:cover_amount] = np.nan
+
+    # Need to also remove the bad values at the end
+    # Reverse and apply same code
+    arr2 = arr2[::-1]
+
+    # If there is another timeserie that has been merged with
+    # there could already be trailing nans
+    finite_indices = np.where(np.isfinite(arr2))[0]
+    if finite_indices.size > 0:
+        nan_end_length = finite_indices[0]
+        logger.info(f'{nan_end_length=}')
+        arr2[:nan_end_length+cover_amount] = np.nan
+    else:
+        logger.warning('All elements in arr2 are NaN. No operation performed.')
+    
+    arr2 = arr2[::-1]
+    
+    return arr2
+
+
+def remove_bad_start_values(arr, window):
+    """
+    Remove initial values from an array based on the window size using a predefined dictionary.
+
+    This function uses a predefined dictionary (`cover_amount_dict`) to determine the number 
+    of initial values to set to NaN based on the window size.
+
+    Args:
+        arr (np.ndarray): The input array from which initial values will be removed.
+        window (int): The window size used to determine the number of initial values to remove.
+
+    Returns:
+        np.ndarray: The modified array with initial values set to NaN.
+    """
+    arr2 = arr.copy()
+    # Check if the window size is in the dictionary and get the cover amount
+    if window in list(cover_amount_dict):
+        cover_amount = cover_amount_dict.get(window, 0)
+        arr2[:cover_amount] = np.nan
+    return arr2
 
 
 # def calcuate_year_stable_and_unstable(time_window_arr, windows, number_attempts: int = 7, max_val:int=50,

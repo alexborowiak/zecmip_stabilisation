@@ -82,7 +82,7 @@ def polynomial_fit(y: ArrayLike, x:Optional[ArrayLike] = None, order:float=None,
     fitted_line_lenght_maintained = np.concatenate([[np.nan]*number_nans_at_start, fitted_line, [np.nan] *number_nans_at_end])
     return fitted_line_lenght_maintained
 
-@utils.function_details
+
 def lowess_fit(exog: Callable, window:int=50) -> Callable:
     '''
     A function to fill the lowess function with exog (x values) and the fraction
@@ -90,7 +90,7 @@ def lowess_fit(exog: Callable, window:int=50) -> Callable:
     return partial(lowess, exog=exog, frac=window/len(exog), return_sorted=False)
 
 
-@utils.function_details
+
 def apply_detrend_as_ufunc(
     da: xr.DataArray, func1d: Callable, func_kwargs:Optional[Dict]=None, debug=False) -> xr.DataArray:
     '''
@@ -117,7 +117,7 @@ def apply_detrend_as_ufunc(
     return to_return
        
 
-# @utils.function_details
+# 
 def trend_fit(da:xr.DataArray, method:str=None, order:int=1, lowess_window:int=30, func_kwargs:Optional[Dict]={},
              logginglevel='ERROR'):
     '''

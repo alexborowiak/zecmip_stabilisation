@@ -92,6 +92,7 @@ plot_kwargs = dict(height=12, width=22, hspace=0.3, #vmin=-8, vmax=8, step=2,
 
 colors = [(0, 0, 0, 0), (0.5, 0.5, 0.5, 0.5)]  # (R, G, B, Alpha)
 cmap_binary = mcolors.LinearSegmentedColormap.from_list("binary_no_color", colors)
+
 def grey_mask(ax, da):
     da.plot(ax=ax, cmap=cmap_binary, add_colorbar=False)
 
@@ -684,11 +685,11 @@ def process_stability_data(data_coords, model_name, anom_data, stability_data, y
     - t2_val: float, The mean temperature anomaly after the second stable year.
     """
     # Extract temperature anomaly data based on coordinates and model
-    sm_ds = anom_data[model_name].sel(**data_coords).squeeze()
+    sm_ds = anom_data[model_name].sel(**data_coords).squeeze() #.sel(time=slice(0, None))
 
     # Extract stability pattern data based on coordinates and model
     sm_patt = stability_data[model_name].sel(**data_coords)
-    sm_patt['time'] = sm_patt.time.dt.year.values
+    # sm_patt['time'] = sm_patt.time.dt.year.values
 
     # Extract and filter stable year values, converting to integer
     year_stable_vals = year_stability_data[model_name].sel(**data_coords).squeeze().values
@@ -734,16 +735,21 @@ def plot_stabilization(data_coords, model_name, anom_data, stability_data, year_
     ax2 = fig.add_subplot(gs[3])
 
     # Plot the stability pattern on the first subplot
-    c1 = sm_patt.plot(y='window', ax=ax1, alpha=0.8, levels=sn_levels, cmap=sn_cmap, add_colorbar=False, extend='both')
+    c1 = sm_patt.plot(y='window', ax=ax1, alpha=0.8, levels=sn_levels, cmap=sn_cmap, add_colorbar=False, 
+                      extend='both')
 
     # Add vertical lines for each stable year in both subplots
     for year in year_stable_vals:
         ax1.axvline(year, color='green')
         ax2.axvline(year, color='green')
 
+    # Check if the time variable uses cftime or numerical values
+    if isinstance(sm_ds.time.values[0], (int, float)):time = sm_ds.time.values
+    else: time = sm_ds.time.dt.year.values
     # Plot the GMST anomaly and its 20-year rolling mean on the second subplot
-    ax2.plot(sm_ds.time.dt.year.values, sm_ds.values)
-    ax2.plot(sm_ds.time.dt.year.values, sm_ds.rolling(time=20, center=True).mean().values, color='green', linewidth=3)
+    # xmin = np.nanmin(time)
+    ax2.plot(time, sm_ds.values)
+    # ax2.plot(time, sm_ds.rolling(time=20, center=True).mean().values, color='green', linewidth=3)
 
     # Add lines for temperature anomalies based on the new value lists
     counter = 0
@@ -757,8 +763,8 @@ def plot_stabilization(data_coords, model_name, anom_data, stability_data, year_
             # ax2.annotate(f'{diff:.1f}' + r'$^\circ$C', xy=(start+int((end-start)/2)+1,yval) , size=12, color='magenta',
             #             ha='center', va='center')
             sign = '+' if diff > 0 else '-'
-            ax2.annotate(f'{sign}{diff:.1f}' + r'$^\circ$C', xy=(start+int((end-start)/2)+1,yval) , size=12, color='magenta',
-                        ha='center', va='center')
+            ax2.annotate(f'{sign}{diff:.1f}' + r'$^\circ$C', xy=(start+int((end-start)/2)+1,yval) , size=12,
+                         color='magenta', ha='center', va='center')
         counter += 1
 
     # Set up the x-axis of the first subplot, moving labels to the top
@@ -766,12 +772,14 @@ def plot_stabilization(data_coords, model_name, anom_data, stability_data, year_
     ax1.xaxis.tick_top()
 
     # Apply common settings to both subplots, like limits and grid
-    for ax in [ax1, ax2]:
-        ax.set_xlim(-1, 80)
-        ax.grid(True, linestyle='--', alpha=0.6, color='grey')
+    # for ax in [ax1, ax2]:
+    #     # ax.set_xlim(-1, 80)
+    #     ax.set_xlim(xmin, 100)
+    #     ax.grid(True, linestyle='--', alpha=0.6, color='grey')
 
     # Add a grey shaded region to the first subplot
-    ax1.axvspan(50, 80, color='grey')
+    # ax1.axvspan(50, 80, color='grey')
+    # ax1.axvspan(100-np.abs(xmin), 100, color='grey')
 
     # Label the axes of both subplots
     ax1.set_xlabel('')
