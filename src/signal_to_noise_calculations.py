@@ -753,7 +753,7 @@ def find_stable_year_unsable_window_sel(unstable_pattern_arr, unstable_fraction_
 
     Raises:
     ------
-    AssertionError:
+    AssertionERROR:
         If the shape of `unstable_pattern_arr` does not match the reversed shape of
         `unstable_fraction_arr`.
     """
@@ -810,13 +810,14 @@ def find_stable_year_unsable_window_sel(unstable_pattern_arr, unstable_fraction_
 
 
 
-def frac_non_zero_window(time_window_arr, windows):
+def frac_non_zero_window(time_window_arr, windows, period_length:int=10):
     """
     Calculate the percentage of non-NaN values within specified windows for each time series.
 
     Args:
         time_window_arr (np.ndarray): 2D array where each column represents a different time series.
         windows (list of int): List of window sizes to apply across the time series.
+
 
     Returns:
         np.ndarray: 2D array with the same shape as `time_window_arr` where each element represents 
@@ -831,7 +832,7 @@ def frac_non_zero_window(time_window_arr, windows):
         # Extract the time series data for the current window.
         time_arr = time_window_arr[:, num]
 
-        sel_legth = 10#np.max([10, int(window/2)])
+        sel_legth = period_length#np.max([10, int(window/2)])
         number_non_zero = np.array([np.nansum(time_arr[t:t+sel_legth]) for t in range(len(time_arr)-sel_legth)])
         frac_non_zero = number_non_zero/sel_legth
 
@@ -842,7 +843,7 @@ def frac_non_zero_window(time_window_arr, windows):
     return np.array(frac_non_zero_2d).transpose(-1, 0)
 
     
-def calcuate_year_stable_and_unstable(time_window_arr, windows, number_attempts: int = 7, 
+def calcuate_year_stable_and_unstable(time_window_arr, windows, period_length:int=10, number_attempts: int = 7, 
                                       max_val:int=50, logginglevel='ERROR'):
     """
     Calculate the years of stability and instability in a time series.
@@ -851,6 +852,8 @@ def calcuate_year_stable_and_unstable(time_window_arr, windows, number_attempts:
     - time_window_arr (np.ndarray): A 2D array representing the time series data for different windows.
     - windows (np.ndarray): An array containing the size of each window.
     - number_attempts (int): The maximum number of iterations for searching stability/instability. Default is 5.
+    - period_length (int): The length of that stabilility has to occur for before the climate is
+                             consdiered stable.
     
     Returns:
     - year_list (np.ndarray): A cumulative sum array representing the years at which stability or instability is identified.
@@ -885,11 +888,11 @@ def calcuate_year_stable_and_unstable(time_window_arr, windows, number_attempts:
 
     # Calculate the fraction of unstable points within each window.
     # time x window
-    frac_unstable_arr = frac_non_zero_window(time_window_arr, windows)
+    frac_unstable_arr = frac_non_zero_window(time_window_arr, windows, period_length)
 
     # Using 5 years here, as if the very last of the 10 years has an unstable fraction
-    initial_fracs = frac_unstable_arr[:8, :]
-    logger.info(f' - inital_fracs (shape = {initial_fracs.shape})\n{initial_fracs}')
+    initial_fracs = frac_unstable_arr[:period_length, :]
+    logger.debug(f' - inital_fracs (shape = {initial_fracs.shape})\n{initial_fracs}')
 
     if np.any(initial_fracs >= 0.5):
         logger.info('Fracs above 0.5 found - test for stability')
@@ -934,13 +937,14 @@ def calcuate_year_stable_and_unstable(time_window_arr, windows, number_attempts:
 
             # The first time we are doing this, we don't want to subtract as this
             # has not occured year
-            if next_year_list[-1] > 0:# and TEST_FOR_INSTABILITY:  and len(next_year_list)>=2 # len(next_year_list) >= number_required_for_sub: 
+            if next_year_list[-1] > 0:
+                # and TEST_FOR_INSTABILITY:  and len(next_year_list)>=2 # len(next_year_list) >= number_required_for_sub: 
                 next_year_list[-1] = next_year_list[-1]-1
             # if selection > 1: selection = selection -1
             time_window_arr = time_window_arr[selection:, :]
     
             # Break if the remaining time series is too short for further analysis.
-            if time_window_arr.shape[0] < 10: break
+            if time_window_arr.shape[0] < (period_length+5): break
         if len(next_year_list)>=2: # At lesat two entries
             # There has only been least three years since the last change
             if next_year_list[-1] <= 3: # Only three years since last condition
@@ -951,7 +955,7 @@ def calcuate_year_stable_and_unstable(time_window_arr, windows, number_attempts:
             else: bump_start=0
     
         # Calculate the fraction of unstable points within each window.
-        frac_unstable_arr = frac_non_zero_window(time_window_arr, windows)
+        frac_unstable_arr = frac_non_zero_window(time_window_arr, windows, period_length)
     
         if TEST_FOR_INSTABILITY:  # Searching for instability
             logger.info('\nInstability Search\n------\n')
@@ -976,7 +980,7 @@ def calcuate_year_stable_and_unstable(time_window_arr, windows, number_attempts:
     
             window_args = np.where(frac_unstable_threshold_arr[first_year_condition_met, :]==1)[0]
             logger.debug(f' - {window_args=}')
-            logger.info(f' - windows that are unstable\n{windows[window_args]}')
+            logger.debug(f' - windows that are unstable\n{windows[window_args]}')
 
     
             first_arg_list = []
@@ -994,10 +998,10 @@ def calcuate_year_stable_and_unstable(time_window_arr, windows, number_attempts:
             logger.debug(f' - first_arg_list\n{first_arg_list}')
             first_arg_list = np.array(first_arg_list)
             year_addition = np.nanmin(first_arg_list)
-            logger.info(f' - {year_addition=}')
+            logger.debug(f' - {year_addition=}')
     
             year_val = first_year_condition_met+year_addition+1
-            logger.info(f' - {year_val=}')
+            logger.debug(f' - {year_val=}')
             # If the condition analysed is more than 45, break
             if np.cumsum(next_year_list)[-1] > max_val-5: break
 
@@ -1034,7 +1038,7 @@ def calcuate_year_stable_and_unstable(time_window_arr, windows, number_attempts:
                 # once the initial instability has occured
             if i == 0:
                 first_unstable_location = np.where(where_all_windows_stable==0)[0][0]
-                logger.info(f'  - first_unstable_location\n{first_unstable_location}')
+                logger.debug(f'  - first_unstable_location\n{first_unstable_location}')
     
                 where_all_windows_stable = where_all_windows_stable[first_unstable_location:]
                 frac_stable_time_window = frac_stable_time_window[first_unstable_location:]
@@ -1049,7 +1053,7 @@ def calcuate_year_stable_and_unstable(time_window_arr, windows, number_attempts:
     
             #Identify the year before the first fully stable year.
             point_query_year = first_year_condition_met - 1
-            logger.info(f' - {point_query_year=}')
+            logger.debug(f' - {point_query_year=}')
             assert point_query_year >= 0 , ('The point query year is less than 0')
 
     
@@ -1062,7 +1066,7 @@ def calcuate_year_stable_and_unstable(time_window_arr, windows, number_attempts:
             # This shoudl be == 0, as we are looking for when they 
             # are not stable (e.g unstable)
             window_args = np.where(val_at_query_windows == 0)[0]
-            logger.info(f' - windows that are unstable\n{windows[window_args]}')
+            logger.debug(f' - windows that are unstable\n{windows[window_args]}')
             logger.debug(f' - window_args\n{window_args}')
             
     
@@ -1121,9 +1125,8 @@ def calcuate_year_stable_and_unstable(time_window_arr, windows, number_attempts:
     logger.info(f' = nex_year_list final form\n{next_year_list}')
     year_list = np.cumsum(next_year_list)
     logger.info(f' = year_list (cumsum applied )\n{year_list}')
-
     # Due to the need to select one year before the year of change
-    # this introduced small errors that accumulate
+    # this introduced small ERRORs that accumulate
     # position 1 will be too large by one year
     # position 2 will be too large by 2 years
     # etc.
@@ -1177,6 +1180,9 @@ def calcuate_year_stable_and_unstable(time_window_arr, windows, number_attempts:
         logger.info(f' - year_list length {len(year_list)} {number_attemps_2=}')
         logger.info(f' - year_list\n{year_list}')
         logger.info('\n')
+
+    
+    logger.info(year_list.shape)
 
     return year_list
 
