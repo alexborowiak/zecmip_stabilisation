@@ -702,7 +702,8 @@ def process_stability_data(data_coords, model_name, anom_data, stability_data, y
 
     return sm_ds, sm_patt, year_stable_vals, value_mean_list, start_end_tuple_list
 
-def plot_stabilization(data_coords, model_name, anom_data, stability_data, year_stability_data):
+def plot_stabilization(data_coords, model_name, anom_data, stability_data, year_stability_data,
+                       grey_data=None, *args, **kwargs):
     """
     Plots the stabilization and temperature anomaly data for a given model and coordinates.
 
@@ -730,22 +731,35 @@ def plot_stabilization(data_coords, model_name, anom_data, stability_data, year_
     value_mean_list, start_end_tuple_list = calculate_mean_values(year_stable_vals, sm_ds.values)
     
     fig = plt.figure(figsize=(9, 6))
-    gs = gridspec.GridSpec(4, 1, height_ratios=[0.1, 0.15, 1, 0.5], hspace=0)
+    gs = gridspec.GridSpec(4, 1, height_ratios=[0.1, 0.15, 1, 0.5], hspace=0.2)
     ax1 = fig.add_subplot(gs[2])
     ax2 = fig.add_subplot(gs[3])
+
+    # Check if the time variable uses cftime or numerical values
+    if isinstance(sm_ds.time.values[0], (int, float)):time = sm_ds.time.values
+    else: time = sm_ds.time.dt.year.values
+
+    # Check if the time variable uses cftime or numerical values
+    if not isinstance(sm_patt.time.values[0], (int, float)): sm_patt['time'] = sm_ds.time.dt.year.values
+    
 
     # Plot the stability pattern on the first subplot
     c1 = sm_patt.plot(y='window', ax=ax1, alpha=0.8, levels=sn_levels, cmap=sn_cmap, add_colorbar=False, 
                       extend='both')
+
+    if grey_data:
+        grey_da = grey_data.sel(model=model_name)
+        # print(grey_da)
+        # if not isinstance(grey_da.time.values[0], (int, float)):
+        #     grey_da['time'] = grey_da.time.dt.year.values
+        grey_mask(ax1, grey_da)
 
     # Add vertical lines for each stable year in both subplots
     for year in year_stable_vals:
         ax1.axvline(year, color='green')
         ax2.axvline(year, color='green')
 
-    # Check if the time variable uses cftime or numerical values
-    if isinstance(sm_ds.time.values[0], (int, float)):time = sm_ds.time.values
-    else: time = sm_ds.time.dt.year.values
+
     # Plot the GMST anomaly and its 20-year rolling mean on the second subplot
     # xmin = np.nanmin(time)
     ax2.plot(time, sm_ds.values)
