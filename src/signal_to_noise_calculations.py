@@ -300,8 +300,17 @@ def signal_to_noise_ratio_bounds(ds, window:int, **kwargs):
     qlower = kwargs.pop('qlower', 1)
     qupper = kwargs.pop('qupper', 99)
 
+    
+    if 'chunks' in kwargs: 
+        chunks = kwargs.pop('chunks')
+
+    # print(kwargs)
+
+
     # Calculate signal-to-noise ratio
     sn_ratio_ds = signal_to_noise_ratio(ds=ds, window=window, **kwargs).compute()
+
+    sn_ratio_ds = sn_ratio_ds.chunk(chunks)
 
     sn_ratio_bounds_ds = upper_and_lower_bounds(sn_ratio_ds, qlower, qupper)
 
@@ -328,6 +337,8 @@ def signal_to_noise_ratio_bounds_multi_window(
     # Suppress warnings for All-NaN slices
     logginglevel = kwargs.pop('logginglevel', 'ERROR')
     utils.change_logginglevel(logginglevel)
+
+    
     with warnings.catch_warnings():
         warnings.filterwarnings("ignore", message="All-NaN slice encountered",
                                 category=RuntimeWarning)
@@ -342,6 +353,7 @@ def signal_to_noise_ratio_bounds_multi_window(
             signal_to_noise_ratio_bounds_func = signal_to_noise_ratio_bounds
         # Loop over each window size
         for window in windows:
+            logger.info(window)
             out_data = signal_to_noise_ratio_bounds_func(ds, window, **kwargs)
             # Calculate signal-to-noise ratio bounds for current window
             to_concat.append(out_data)
@@ -349,8 +361,74 @@ def signal_to_noise_ratio_bounds_multi_window(
         # Concatenate results along a new dimension named 'window'
         outpout_ds = xr.concat(to_concat, dim='window')
     return outpout_ds
+    
+#####!!!!!! Batch processing - better version but has not been tests.
+# def signal_to_noise_ratio_bounds_multi_window(
+#     ds, 
+#     windows: ArrayLike, 
+#     **kwargs
+# ) -> xr.Dataset:
+#     """
+#     Calculate signal-to-noise ratio bounds for multiple windows.
 
+#     Parameters:
+#     ds (xr.Dataset): Input dataset
+#     windows (ArrayLike): List of window sizes
+#     **kwargs: Additional keyword arguments to pass to signal_to_noise_ratio_bounds
 
+#     Returns:
+#     xr.Dataset: Dataset containing signal-to-noise ratio bounds for each window
+#     """
+#     # Suppress warnings for All-NaN slices
+#     logginglevel = kwargs.pop('logginglevel', 'ERROR')
+#     utils.change_logginglevel(logginglevel)
+
+#     # Handle warning suppression
+#     with warnings.catch_warnings():
+#         warnings.filterwarnings("ignore", message="All-NaN slice encountered",
+#                                 category=RuntimeWarning)
+        
+#         # Initialize list to store results
+#         to_concat = []
+
+#         parallel = kwargs.pop('parallel', False)
+#         batch_size = kwargs.pop('batch', None)  # Retrieve batch size from kwargs
+
+#         # Determine the function to use based on parallel flag
+#         if parallel:
+#             signal_to_noise_ratio_bounds_func = dask.delayed(signal_to_noise_ratio_bounds)
+#         else:
+#             signal_to_noise_ratio_bounds_func = signal_to_noise_ratio_bounds
+
+#         def process_batch(windows_batch, ds, **kwargs):
+#             # Process a batch of windows
+#             to_concat_batch = []
+#             for window in windows_batch:
+#                 logger.info(window)
+#                 out_data = signal_to_noise_ratio_bounds_func(ds, window, **kwargs)
+#                 to_concat_batch.append(out_data)
+#             # Compute results if running in parallel
+#             to_concat_batch = dask.compute(*to_concat_batch)
+#             return to_concat_batch
+
+#         # Process windows in batches if batch_size is specified
+#         if parallel and batch_size and isinstance(batch_size, int):
+#             for i in range(0, len(windows), batch_size):
+#                 batch_windows = windows[i:i + batch_size]  # Get current batch of windows
+#                 to_concat.extend(process_batch(batch_windows, ds, **kwargs))
+#         else:
+#             # Process all windows at once if batch size is not specified
+#             for window in windows:
+#                 logger.info(window)
+#                 out_data = signal_to_noise_ratio_bounds_func(ds, window, **kwargs)
+#                 to_concat.append(out_data)
+#             if parallel:
+#                 to_concat = dask.compute(*to_concat)
+
+#         # Concatenate results along a new dimension named 'window'
+#         outpout_ds = xr.concat(to_concat, dim='window')
+
+    return outpout_ds
 
 
 def multi_window_func(
@@ -810,39 +888,118 @@ def find_stable_year_unsable_window_sel(unstable_pattern_arr, unstable_fraction_
 
 
 
-def frac_non_zero_window(time_window_arr, windows, period_length:int=10):
+
+def frac_non_zero_window(time_window_arr, period_length: int = 10, logginglevel='ERROR'):
     """
     Calculate the percentage of non-NaN values within specified windows for each time series.
 
     Args:
         time_window_arr (np.ndarray): 2D array where each column represents a different time series.
         windows (list of int): List of window sizes to apply across the time series.
-
+        period_length (int): Length of the period over which the fraction is calculated. Default is 10.
 
     Returns:
         np.ndarray: 2D array with the same shape as `time_window_arr` where each element represents 
                     the percentage of non-NaN values within the corresponding window.
     """
-    # Initialize an array to store the percentage of non-NaN values with NaN placeholders.
-    frac_non_zero_2d = []#np.full_like(time_window_arr, np.nan)
+    if isinstance(logginglevel, str):
+        utils.change_logginglevel(logginglevel)
+    
+    # Initialize an array to store the percentage of non-NaN values.
+    frac_non_zero_2d = np.zeros_like(time_window_arr).astype(np.float64)#, np.nan)
 
-    # Iterate through each window size in the `windows` list.
-    for num in range(len(windows)):
-        window = windows[num]
+    # Iterate through each column (time series).
+    for num in range(time_window_arr.shape[1]):
         # Extract the time series data for the current window.
         time_arr = time_window_arr[:, num]
 
-        sel_legth = period_length#np.max([10, int(window/2)])
-        number_non_zero = np.array([np.nansum(time_arr[t:t+sel_legth]) for t in range(len(time_arr)-sel_legth)])
-        frac_non_zero = number_non_zero/sel_legth
+        # Calculate the fraction of non-NaN values in each window.
+        # sel_length = period_length
+        number_non_zero = np.array([
+            np.nansum(time_arr[t:t + period_length]) for t in range(len(time_arr) - period_length + 1)
+        ])
+        logger.info(number_non_zero)
+        frac_non_zero = number_non_zero / period_length
+        logger.info(frac_non_zero)
 
-        frac_non_zero = np.concatenate([frac_non_zero, np.tile(np.nan, sel_legth)])
-        frac_non_zero_2d.append(frac_non_zero)
 
-    # THe way I am looping through all of this results in the array being the wrong way around
-    return np.array(frac_non_zero_2d).transpose(-1, 0)
+        # Place the computed fractions back into the result array.
+        frac_non_zero_2d[:len(frac_non_zero), num] = frac_non_zero
 
-    
+    return frac_non_zero_2d
+
+
+def remove_periods_below_threshold(year_vals, threshold=10):
+    """
+    Remove values from the array where the difference between consecutive elements
+    in stable periods is below a given threshold. Stable periods are defined as the
+    segments between changes in differences. The function removes the values associated
+    with stable periods that have lengths below the threshold.
+
+    Parameters:
+    year_vals (list or np.array): The input list or array of values to be filtered.
+    threshold (int, optional): The minimum allowed length of stable periods. Default is 10.
+
+    Returns:
+    np.array: The filtered array with stable periods below the threshold removed.
+    """
+    # Convert the input to a numpy array for easier manipulation
+    year_vals = np.array(year_vals)
+
+    # Compute the differences between consecutive values
+    lengths = np.diff(year_vals)
+
+    # Extract the stable period lengths (even indexed differences)
+    period_lengths = lengths[::2]
+
+    # Identify stable periods below the threshold
+    length_below_threshold = period_lengths < threshold
+
+    # Determine indices to remove based on the stable periods
+    small_period_args = np.where(length_below_threshold)[0]
+    to_remove = np.sort(np.concatenate([small_period_args*2, small_period_args*2+1]))
+
+    # Remove the identified indices from the array
+    year_vals = np.delete(year_vals, to_remove)
+
+    return year_vals
+
+
+# def remove_closest_pairs_below_threshold(year_list, threshold=10):
+#     """
+#     Remove pairs of consecutive values from a list where the difference between the values is below a given threshold.
+#     The function removes the two values with the smallest difference iteratively until all remaining differences 
+#     between consecutive values are equal to or above the threshold.
+
+#     Parameters:
+#     year_list (list or np.array): The input list or array of years to be filtered.
+#     threshold (int, optional): The minimum allowed difference between consecutive values. Default is 10.
+
+#     Returns:
+#     np.array: The filtered array with all differences between consecutive values equal to or above the threshold.
+#     """
+#     # Convert the input to a numpy array for easier manipulation
+#     year_list = np.array(year_list)
+
+#     # Calculate differences between consecutive values
+#     diffs = np.diff(year_list)
+
+#     # Iterate while there are any differences below the threshold
+#     while np.any(diffs < threshold):
+#         # Find the index of the smallest difference
+#         min_diff_arg = np.argmin(diffs)
+
+#         # Remove the two values with the smallest difference
+#         # First, remove the element at min_diff_arg + 1
+#         year_list = np.delete(year_list, min_diff_arg + 1)
+#         # Then, remove the element at min_diff_arg (which has shifted one position left)
+#         year_list = np.delete(year_list, min_diff_arg)
+
+#         # Recalculate differences after removal
+#         diffs = np.diff(year_list)
+
+#     return year_list
+
 def calcuate_year_stable_and_unstable(time_window_arr, windows, period_length:int=10, number_attempts: int = 7, 
                                       max_val:int=50, logginglevel='ERROR'):
     """
@@ -888,11 +1045,15 @@ def calcuate_year_stable_and_unstable(time_window_arr, windows, period_length:in
 
     # Calculate the fraction of unstable points within each window.
     # time x window
-    frac_unstable_arr = frac_non_zero_window(time_window_arr, windows, period_length)
-
+    logger.debug(f'{period_length=}')
+    frac_unstable_arr = frac_non_zero_window(time_window_arr, period_length, None)
+    logger.info(f'Shapes - time_window_arr = {time_window_arr.shape}, frac_unstable_arr = {frac_unstable_arr.shape}')
     # Using 5 years here, as if the very last of the 10 years has an unstable fraction
+    
     initial_fracs = frac_unstable_arr[:period_length, :]
-    logger.debug(f' - inital_fracs (shape = {initial_fracs.shape})\n{initial_fracs}')
+    logger.info(f'initial_fracs shape {initial_fracs.shape}')
+    with np.printoptions(threshold=np.inf):
+        logger.debug(f' - inital_fracs (shape = {initial_fracs.shape})\n{initial_fracs}')
 
     if np.any(initial_fracs >= 0.5):
         logger.info('Fracs above 0.5 found - test for stability')
@@ -938,24 +1099,33 @@ def calcuate_year_stable_and_unstable(time_window_arr, windows, period_length:in
             # The first time we are doing this, we don't want to subtract as this
             # has not occured year
             if next_year_list[-1] > 0:
-                # and TEST_FOR_INSTABILITY:  and len(next_year_list)>=2 # len(next_year_list) >= number_required_for_sub: 
+                # and TEST_FOR_INSTABILITY:  and len(next_year_list)>=2 # len(next_year_list) >=
+                # number_required_for_sub: 
                 next_year_list[-1] = next_year_list[-1]-1
             # if selection > 1: selection = selection -1
             time_window_arr = time_window_arr[selection:, :]
+            frac_unstable_arr = frac_unstable_arr[selection:, :]
     
             # Break if the remaining time series is too short for further analysis.
             if time_window_arr.shape[0] < (period_length+5): break
-        if len(next_year_list)>=2: # At lesat two entries
-            # There has only been least three years since the last change
-            if next_year_list[-1] <= 3: # Only three years since last condition
-                # Erase last two values - the are basically ontop
-                # e.g. the first condition didn't really occur
-                bump_start = np.nansum(next_year_list[:-2])#next_year_list[-1]
-                next_year_list = next_year_list[:-2]
-            else: bump_start=0
+        # if len(next_year_list)>=2: # At lesat two entries
+        #     # There has only been least three years since the last change
+        #     if next_year_list[-1] <= period_length: # Only ten years since last condition (changed from 3)
+        # #         # Erase last two values - the are basically ontop
+        # #         # e.g. the first condition didn't really occur
+        # #         if bump_start > 0:
+        # #             logger.info(f'Bump start currently {bump_start=}')
+        # #         bump_start += np.nansum(next_year_list[-2:])
+        # #         logger.info(f'Bump start now {bump_start=}')
+        # #         logger.info(f'Current next_year_list\n{next_year_list}')
+        # #         next_year_list = next_year_list[:-2]
+        # #         logger.info(f'Values erased next_year_list\n {next_year_list}')
+        # #         bump_start = 0
+        #         number_attempts += 2
+        #     else: bump_start=0
     
         # Calculate the fraction of unstable points within each window.
-        frac_unstable_arr = frac_non_zero_window(time_window_arr, windows, period_length)
+        # frac_unstable_arr = frac_non_zero_window(time_window_arr, period_length, logginglevel)
     
         if TEST_FOR_INSTABILITY:  # Searching for instability
             logger.info('\nInstability Search\n------\n')
@@ -985,12 +1155,13 @@ def calcuate_year_stable_and_unstable(time_window_arr, windows, period_length:in
     
             first_arg_list = []
             for sarg in window_args:
-                length_of_selection = 10#np.min([10, int(window)])
+                # length_of_selection = period_length#10#np.min([10, int(window)])
                 # Select the window size for analysis
                 window = windows[sarg]
-                logger.debug(f' - {sarg=} {window}')
+                logger.debug(f' - {sarg=} {window=}')
                 anlsysis_window =\
-                    time_window_arr[first_year_condition_met:first_year_condition_met + length_of_selection, sarg]
+                    time_window_arr[:, sarg]
+                    # time_window_arr[first_year_condition_met:first_year_condition_met + period_length+1, sarg]
 
                 logger.debug(f' - anlsysis_window {anlsysis_window.shape}\n{anlsysis_window}')
                 first_unstable_point = np.where(anlsysis_window==1)[0][0]
@@ -1011,7 +1182,6 @@ def calcuate_year_stable_and_unstable(time_window_arr, windows, period_length:in
             # number_attempts = number_attempts - 1
             # i += 1
     
-      
         elif TEST_FOR_STABILITY:  # Searching for stability
             logger.info('\nStability Search\n----------\n')
             # Set a threshold where stability is defined as the fraction of unstable points <= 0.2.
@@ -1037,6 +1207,7 @@ def calcuate_year_stable_and_unstable(time_window_arr, windows, period_length:in
                 # Therefore we only want to start searching for stability
                 # once the initial instability has occured
             if i == 0:
+                logger.debug('')
                 first_unstable_location = np.where(where_all_windows_stable==0)[0][0]
                 logger.debug(f'  - first_unstable_location\n{first_unstable_location}')
     
@@ -1077,11 +1248,12 @@ def calcuate_year_stable_and_unstable(time_window_arr, windows, period_length:in
                 window = windows[sarg]
     
                 # Determine the length of the selection window, max of 10 or the window size.
-                length_of_selection = 10#np.min([10, int(window)])
+                # length_of_selection = 10#np.min([10, int(window)])
+                # length_of_selection = period_length
     
                 # print(window)
                 # Select the analysis window starting from the query year.
-                analysis_window = time_window_arr[point_query_year:point_query_year + length_of_selection, sarg]
+                analysis_window = time_window_arr[point_query_year:point_query_year + period_length, sarg]
     
                 # Find the last stable index in the analysis window.
                 last_arg = get_last_arg_v2(analysis_window)
@@ -1136,6 +1308,11 @@ def calcuate_year_stable_and_unstable(time_window_arr, windows, period_length:in
                 year_list[num] = year_list[num]+1 #- num
 
 
+    # Remove values that are too close together
+    # year_list = remove_close_values(year_list, period_length)
+    # year_list = remove_closest_pairs_below_threshold(year_list, int(period_length/2)-2)
+    # year_list = remove_periods_below_threshold(year_list, int(period_length/2))
+    # 
     # End point conditions
     # # If there are any values greater than 50, replace them with 50
     if np.any(year_list>(max_val)):
@@ -1183,7 +1360,7 @@ def calcuate_year_stable_and_unstable(time_window_arr, windows, period_length:in
 
     
     logger.info(year_list.shape)
-
+    logger.info(f'final result {year_list}')
     return year_list
 
 

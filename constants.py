@@ -18,7 +18,7 @@ MODEL_WINDOW_INFORMATION = {
      'GISS-E2-1-G-CC': {'time_length': 180, 'max_window': 57},
      'MIROC-ES2L': {'time_length': 248, 'max_window': 80},
      'NorESM2-LM': {'time_length': 100, 'max_window': 30},
-     'UKESM1-0-LL': {'time_length': 330, 'max_window': 107}
+     'UKESM1-0-LL': {'time_length': 330, 'max_window': 201} # 107 from algorigthm 
 }
 
 

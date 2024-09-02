@@ -251,4 +251,12 @@ def create_colorbar(plot, cax, levels, tick_offset=None, cut_ticks=1, round_leve
     return cbar
 
 
+def plot_stippled_data(sig, ax, sig_size:float=2, alpha=1, marker='o'):
+
+    # The result will be scattered, so we need a meshgrid.
+    X,Y = np.meshgrid(sig.lon, sig.lat)
+    size = np.nan_to_num(sig.values, 0)
+
+    ax.scatter(X,Y, s=size * sig_size, color='k', alpha=alpha, marker=marker)
+
 
