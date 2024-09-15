@@ -33,6 +33,9 @@ def create_levels(vmax:float, vmin:float=None, step:float=1)->np.ndarray:
 def add_figure_label(ax: plt.Axes, label:str, font_scale:int=1, x:float=0.01, y:float=1.05):
     ax.annotate(label, xy = (x,y), xycoords = 'axes fraction', size=PlotConfig.label_size*font_scale)
 
+def add_figure_label2(ax: plt.Axes, label:str, fontsize=14, x:float=0.01, y:float=1.05):
+    ax.annotate(label, xy = (x,y), xycoords = 'axes fraction', size=14)
+
 def format_axis(ax: plt.Axes, title:str=None, xlabel:str=None, ylabel:str=None, invisible_spines=None, 
                font_scale=1, rotation=0, labelpad=100, xlabelpad=10, grid:bool=True):
     '''Formatting with no top and right axis spines and correct tick size.'''
