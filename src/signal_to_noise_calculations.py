@@ -1484,7 +1484,7 @@ def search_for_stability_v2(time_window_arr, frac_unstable_arr, windows, period_
         year_val = year_val + first_unstable_location
 
     return year_val
-    return year_val
+    # return year_val
 
 
 def calcuate_year_stable_and_unstable_v2(time_window_arr, frac_unstable_arr, windows, period_length:int=10, number_attempts: int = 7, 
